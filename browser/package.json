@@ -1,0 +1,20 @@
+{
+  "name": "obu-course-planner-browser",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Headless-browser transport for the OBU course planner schedule refresh (JSONL bridge driven by Python)",
+  "license": "MIT",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.cjs"
+  },
+  "dependencies": {
+    "playwright-core": "1.57.0",
+    "puppeteer-core": "25.16.0",
+    "puppeteer-extra": "3.3.6",
+    "puppeteer-extra-plugin-stealth": "2.11.2"
+  }
+}

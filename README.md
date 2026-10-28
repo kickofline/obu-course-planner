@@ -89,14 +89,62 @@ grades, notes, and history) between the standalone page and an embed.
 uv run pytest
 
 cd frontend && npm test   # node --test, share-link round trips
+
+# Refresh browser pacing (no upstream traffic)
+cd ../browser && npm ci && npm test
 ```
 
 ## Deployment
 
-Runs as a small non-root container (`python:3.13-slim`) with a built wheel; the healthcheck hits
-`/healthz`. The optional refresh runner and daily systemd timer are in `deploy/` — configure
-`/etc/obu-course-planner/refresh.env` before enabling them; a failed refresh keeps the last complete
-schedule.
+Runs as a small non-root container (`python:3.13-slim`) built from `Dockerfile`; it serves the API
+and the wheel-bundled site and never runs a browser. The healthcheck hits `/healthz`.
+
+### Schedule refresh
+
+Snapshot refreshes use a separate image (`Dockerfile.refresh`), because the capture drives a headless
+browser. A Node helper (`browser/`) paces every outbound HTTP(S) request — including redirects and
+page subresources — to at most one per second, and no browser ever runs on the request-serving path.
+The transport is a stealth-patched headless browser against an upstream that blocks plain HTTP
+clients: there is no CAPTCHA solving, no IP rotation, and no retry loop. A capture that fails or
+returns an incomplete listing is discarded, and the last complete snapshot stays in place.
+
+```sh
+# Build the refresher (Node 24 + pinned Playwright headless shell baked in)
+docker build -f Dockerfile.refresh -t obu-course-planner-refresh:local .
+
+# Host config, /etc/obu-course-planner/refresh.env:
+#   OBU_PLANNER_REFRESH_IMAGE=obu-course-planner-refresh:local
+#   OBU_PLANNER_VOLUME=<volume holding schedule-snapshot.json>
+```
+
+`deploy/refresh_schedule.py` runs that image as a disposable, read-only, cap-dropped container
+(`10002:10001`, 1 CPU, 1 GB, no retries); `deploy/obu-course-planner-refresh.{service,timer}` run it
+daily at 05:00 UTC, without touching the running API container.
+
+The output directory must be writable by UID 10002 and readable by the API's GID 10001. Configure
+the two variables above in the host environment file (mode `0600`), then install the runner and units:
+
+```sh
+sudo install -D -m 0755 deploy/refresh_schedule.py /usr/local/lib/obu-course-planner/refresh_schedule.py
+sudo install -m 0644 deploy/obu-course-planner-refresh.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now obu-course-planner-refresh.timer
+sudo systemctl start --no-block obu-course-planner-refresh.service
+```
+
+Use a commit-tagged image or immutable image ID for `OBU_PLANNER_REFRESH_IMAGE`; rebuild and update
+that value when changing the capture code. The API image is deployed independently.
+
+For local refresher development, install the locked driver dependencies and matching Chromium
+(the Docker image uses its headless shell), then point the transport at it:
+
+```sh
+npm ci --prefix browser
+node browser/node_modules/playwright-core/cli.js install chromium
+export NODE_PATH="$PWD/browser/node_modules"
+export OBU_BROWSER_EXECUTABLE="$(node -e "console.log(require('playwright-core').chromium.executablePath())")"
+uv run python -m obu_course_planner.refresh --output /tmp/schedule-snapshot.json --delay 1
+```
 
 ## License
 

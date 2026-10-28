@@ -10,7 +10,6 @@ requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
 dependencies = [
-  "httpx>=0.28,<0.29",
   "beautifulsoup4>=4.13,<5",
   "starlette>=1.10,<2",
   "uvicorn>=0.54,<1",
@@ -20,7 +19,7 @@ dependencies = [
 obu-course-planner = "obu_course_planner.server:main"
 
 [dependency-groups]
-dev = ["pytest>=8,<10"]
+dev = ["pytest>=8,<10", "httpx>=0.28,<0.29"]
 
 # static/ is the generated frontend build and is gitignored; artifacts keeps it in the wheel
 # (and so in the installed package) even though it never appears in a clean checkout.

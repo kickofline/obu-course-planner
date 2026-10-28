@@ -42,8 +42,29 @@ def page(fields=None, rows="", count=0, next_number=2, heading="Patterson School
     )
 
 
+class FakeBrowser:
+    """In-memory upstream for parser/capture tests; network pacing is tested in Node."""
+
+    def __init__(self, handler):
+        self._http = httpx.Client(transport=httpx.MockTransport(handler))
+        self.requests = 0
+
+    def request(self, method, url, **kwargs):
+        self.requests += 1
+        response = self._http.request(method, url, **kwargs)
+        if response.status_code >= 400:
+            raise RuntimeError(f"OBU schedule request failed (HTTP {response.status_code})")
+        return response.text
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self._http.close()
+
+
 def client_for(handler):
-    return mod.ScheduleClient(httpx.Client(transport=httpx.MockTransport(handler)))
+    return mod.ScheduleClient(FakeBrowser(handler))
 
 
 def test_school_heading_and_derived_hours_carry_across_pages():

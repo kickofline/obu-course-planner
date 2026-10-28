@@ -2,13 +2,11 @@
 from __future__ import annotations
 
 import re
-import time
 from typing import Any
 
 from bs4 import BeautifulSoup
-import httpx
 
-from . import config
+from .browser_transport import BrowserSession
 
 SOURCE_URL = "https://info.obu.edu/info/p3/CLASSSCHED.php"
 FRAME_URL = SOURCE_URL + "?fromfile=PublicFrame&pubiframe=Y"
@@ -126,26 +124,15 @@ def next_page(soup: BeautifulSoup) -> int | None:
 
 
 class ScheduleClient:
-    """One cookie session; every request paced and identified."""
+    """Read listing pages in one persistent, network-paced browser session."""
 
-    def __init__(self, client: httpx.Client, request_delay: float = 0) -> None:
+    def __init__(self, client: BrowserSession) -> None:
         self._client = client
-        self._request_delay = request_delay
         self.requests = 0
 
     def request(self, method: str, url: str, **kwargs: Any) -> str:
-        kwargs.setdefault("headers", {})["User-Agent"] = config.user_agent()
-        if self._request_delay and self.requests:
-            time.sleep(self._request_delay)
         self.requests += 1
-        try:
-            response = self._client.request(method, url, **kwargs)
-            response.raise_for_status()
-        except httpx.HTTPError as exc:
-            reason = f"HTTP {exc.response.status_code}" if isinstance(exc, httpx.HTTPStatusError) else type(exc).__name__
-            raise RuntimeError(f"OBU schedule request failed ({reason}); no schedule data returned.") from exc
-        # The public page explicitly declares ISO-8859-1.
-        return response.content.decode("iso-8859-1")
+        return self._client.request(method, url, **kwargs)
 
     def open(self) -> tuple[BeautifulSoup, dict, dict]:
         return parse_form(self.request("GET", FRAME_URL))

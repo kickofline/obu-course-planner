@@ -1,5 +1,6 @@
 **
 !Dockerfile
+!Dockerfile.refresh
 !.dockerignore
 !pyproject.toml
 !uv.lock
@@ -15,3 +16,7 @@ src/obu_course_planner/static/
 frontend/node_modules/
 frontend/.astro/
 frontend/dist/
+# Refresher browser driver manifests; node_modules is installed inside Dockerfile.refresh.
+!browser/
+!browser/**
+browser/node_modules/

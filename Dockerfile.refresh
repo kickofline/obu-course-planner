@@ -1,0 +1,56 @@
+# syntax=docker/dockerfile:1
+# Refresh-only image: Python 3.13 plus the pinned Node browser driver.
+#
+# The request-serving API image (Dockerfile) ships neither Node nor any browser packages; only this
+# disposable refresher needs them. It installs the exact versions in browser/package-lock.json and
+# the Playwright 1.57 headless-shell Chromium they drive, then drops to an unprivileged user.
+# Build:  docker build -f Dockerfile.refresh -t obu-course-planner-refresh:local .
+# Run:    see deploy/refresh_schedule.py (readonly root, no caps, /data/schedule mounted).
+
+FROM node:24-bookworm-slim AS node
+FROM ghcr.io/astral-sh/uv:0.10.2 AS uv
+
+FROM python:3.13-slim-bookworm AS build
+COPY --from=uv /uv /usr/local/bin/uv
+# Node 24 matching this Debian release: the refresher's Node helper resolves its dependencies here.
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
+ENV UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=never
+WORKDIR /app
+COPY pyproject.toml uv.lock LICENSE ./
+COPY src ./src
+# --no-editable bakes the wheel (including the packaged Node helper src/obu_course_planner/browser/)
+# into .venv. No frontend build: this image never serves requests.
+RUN uv sync --frozen --no-dev --no-editable
+# Exact, locked browser driver dependencies.
+COPY browser/package.json browser/package-lock.json /app/browser/
+RUN node /usr/local/lib/node_modules/npm/bin/npm-cli.js ci --prefix /app/browser --no-audit --no-fund
+
+FROM python:3.13-slim-bookworm
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=build /app/.venv /app/.venv
+COPY --from=build /app/browser /app/browser
+
+# --with-deps pulls the Chromium OS libraries (root, build time only). The Playwright 1.57
+# headless shell is the exact binary the capture was proven against.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+RUN node /app/browser/node_modules/playwright-core/cli.js install --with-deps --only-shell chromium \
+    && ln -sf /opt/ms-playwright/chromium_headless_shell-*/chrome-linux/headless_shell /usr/local/bin/obu-chromium \
+    && chmod -R a+rX /opt/ms-playwright \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/app/.venv/bin:$PATH" \
+    NODE_PATH=/app/browser/node_modules \
+    OBU_BROWSER_EXECUTABLE=/usr/local/bin/obu-chromium \
+    HOME=/tmp
+WORKDIR /app
+RUN groupadd --gid 10001 app \
+    && useradd --uid 10002 --gid app --no-create-home refresh
+
+# Runs as 10002:10001 with a read-only root; the runner supplies /data/schedule and a /tmp tmpfs.
+USER 10002:10001
+ENTRYPOINT ["python", "-m", "obu_course_planner.refresh"]
+CMD ["--output", "/data/schedule/schedule-snapshot.json", "--delay", "1"]

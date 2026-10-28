@@ -12,3 +12,5 @@ dist/
 src/obu_course_planner/static/
 frontend/node_modules/
 frontend/.astro/
+# Browser driver dependencies (installed in Dockerfile.refresh / locally via `npm ci --prefix browser`).
+browser/node_modules/

@@ -9,7 +9,6 @@ import os
 # Local development: the Astro dev server (frontend/) and the backend serving the built site at /courses/.
 DEFAULT_ORIGINS = ("http://localhost:4321", "http://127.0.0.1:4321",
                    "http://localhost:8000", "http://127.0.0.1:8000")
-DEFAULT_USER_AGENT = "obu-course-planner (+https://github.com/kickofline/obu-course-planner)"
 
 
 def allowed_origins() -> frozenset[str]:
@@ -31,8 +30,3 @@ def frame_ancestors() -> str:
 def site_url() -> str:
     """Public planner page, printed on worksheets and shown at the API root. Optional."""
     return os.environ.get("PLANNER_SITE_URL", "").strip()
-
-
-def user_agent() -> str:
-    """User-Agent for requests to OBU's schedule site; set OBU_REFRESH_USER_AGENT to add contact details."""
-    return os.environ.get("OBU_REFRESH_USER_AGENT", "").strip() or DEFAULT_USER_AGENT

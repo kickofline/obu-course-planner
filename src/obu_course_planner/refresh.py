@@ -1,7 +1,7 @@
 """Capture every semester/program listing (no per-filter queries), then publish atomically.
 
-Filters (school, time slot, term, level) and credit hours are derived from the listing
-itself, so the request count is about one per page plus one per semester/program.
+Filters (school, time slot, term, level) and credit hours are derived from the listing.
+The persistent browser paces every HTTP(S) request, including resources and redirects.
 """
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from pathlib import Path
 import re
 import tempfile
 
-import httpx
+from .browser_transport import BrowserSession
 
 from .schedule import SOURCE_URL, ScheduleClient
 from .snapshot import SCHEMA_VERSION, SNAPSHOT_PATH, SnapshotScheduleClient, course_id
@@ -60,8 +60,8 @@ def is_current(label: str, today: date) -> bool:
 
 def capture(delay: float = 1.0, today: date | None = None) -> dict:
     today = today or datetime.now(timezone.utc).date()
-    with httpx.Client(timeout=30, follow_redirects=True) as http:
-        source = ScheduleClient(http, request_delay=delay)
+    with BrowserSession(delay=delay) as browser:
+        source = ScheduleClient(browser)
         _, form, initial = source.open()
         # The semester in progress is skipped: registration for it is over, and skipping it
         # roughly halves the requests. Only upcoming semesters are captured.
@@ -115,8 +115,8 @@ def capture(delay: float = 1.0, today: date | None = None) -> dict:
             # Site default is the skipped current semester: default to the upcoming semester
             # with the most sections (e.g. Spring rather than a small online-only Winter term).
             result["default_semester"] = max(result["datasets"], key=lambda s: len(result["datasets"][s]["courses"]))
-        result.update(complete=True, completed_at=now(), request_count=source.requests)
-        return result
+    result.update(complete=True, completed_at=now(), request_count=browser.requests)
+    return result
 
 
 def refresh(output: Path, delay: float = 1.0) -> dict:
@@ -148,10 +148,10 @@ def refresh(output: Path, delay: float = 1.0) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=SNAPSHOT_PATH)
-    parser.add_argument("--delay", type=float, default=1.0, help="Seconds between HTTP requests (sequential, no retries)")
+    parser.add_argument("--delay", type=float, default=1.0, help="Minimum seconds between all browser HTTP(S) requests (no retries)")
     args = parser.parse_args()
-    if not 0.1 <= args.delay <= 10:
-        parser.error("--delay must be between 0.1 and 10 seconds")
+    if not 1 <= args.delay <= 10:
+        parser.error("--delay must be between 1 and 10 seconds")
     print(json.dumps(refresh(args.output, args.delay), indent=2))
 
 
