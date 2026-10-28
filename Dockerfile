@@ -1,11 +1,22 @@
 FROM ghcr.io/astral-sh/uv:0.10.2 AS uv
 
+# Node 22 (>= 22.12) builds the Astro frontend. Astro's outDir is ../src/obu_course_planner/static,
+# relative to frontend/, so the built site lands in this stage's /app/src tree.
+FROM node:22-bookworm-slim AS frontend
+WORKDIR /app/frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY frontend/ ./
+RUN npm run build
+
 FROM python:3.13-slim AS build
 COPY --from=uv /uv /usr/local/bin/uv
 ENV UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
 WORKDIR /app
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock LICENSE ./
 COPY src ./src
+COPY --from=frontend /app/src/obu_course_planner/static ./src/obu_course_planner/static
+# --no-editable bakes the package (including the generated static/ build) into the wheel in .venv.
 RUN uv sync --frozen --no-dev --no-editable
 
 FROM python:3.13-slim

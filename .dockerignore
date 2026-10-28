@@ -3,7 +3,15 @@
 !.dockerignore
 !pyproject.toml
 !uv.lock
+!LICENSE
 !src/
 !src/**
 src/**/__pycache__/
 src/**/*.pyc
+# Generated Astro output: built inside the image's Node stage, not shipped in the context.
+src/obu_course_planner/static/
+!frontend/
+!frontend/**
+frontend/node_modules/
+frontend/.astro/
+frontend/dist/

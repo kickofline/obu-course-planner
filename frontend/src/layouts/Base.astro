@@ -1,0 +1,32 @@
+---
+// Minimal shell for the standalone planner: no personal-site metadata, analytics, or beet content.
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#fafafa" />
+    {description && <meta name="description" content={description} />}
+    <title>{title}</title>
+
+    <slot name="head" />
+  </head>
+  <body>
+    <a class="skip-link" href="#content">Skip to content</a>
+    <div class="page page--wide">
+      <main id="content">
+        <slot />
+      </main>
+    </div>
+  </body>
+</html>

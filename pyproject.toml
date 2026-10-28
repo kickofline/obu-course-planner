@@ -7,6 +7,8 @@ name = "obu-course-planner"
 version = "2.0.0"
 description = "OBU course planner: cached class schedules, catalog requirements, plan checks, and printable worksheets"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = [
   "httpx>=0.28,<0.29",
   "beautifulsoup4>=4.13,<5",
@@ -19,6 +21,11 @@ obu-course-planner = "obu_course_planner.server:main"
 
 [dependency-groups]
 dev = ["pytest>=8,<10"]
+
+# static/ is the generated frontend build and is gitignored; artifacts keeps it in the wheel
+# (and so in the installed package) even though it never appears in a clean checkout.
+[tool.hatch.build]
+artifacts = ["src/obu_course_planner/static/**"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/obu_course_planner"]

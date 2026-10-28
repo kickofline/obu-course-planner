@@ -1,0 +1,1105 @@
+/* OBU pre-registration worksheet builder. Status colors always pair with an icon or text. */
+
+.page--wide {
+  width: min(calc(100% - 1.5rem), 90rem);
+}
+
+/* Tokens also apply to the dialog, which lives outside .planner. */
+.planner,
+#dlg {
+  --ok: #17733f;
+  --plan: #0a4fb5;
+  --miss: #a52834;
+  --warn: #8a5a00;
+  --card: #ffffff;
+  --soft: #f1f3f4;
+}
+
+.planner {
+  padding-block: 1rem 2rem;
+  font-size: 0.93rem;
+  line-height: 1.45;
+}
+
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.planner button,
+.dlg button {
+  font: inherit;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.planner button:hover,
+.dlg button:hover {
+  border-color: var(--muted);
+}
+
+.planner button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.planner button.primary,
+.dlg button.primary {
+  background: var(--text);
+  border-color: var(--text);
+  color: white;
+}
+
+.planner button.icon {
+  padding: 0 0.35rem;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+.planner button.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  text-decoration: underline;
+}
+
+.planner input,
+.planner select,
+.planner textarea,
+.dlg input,
+.dlg select {
+  font: inherit;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.small {
+  font-size: 0.85em;
+}
+
+.warn {
+  color: var(--warn);
+}
+
+.bad {
+  color: var(--miss);
+}
+
+/* ---------------------------------------------------------------- header */
+
+.pl-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pl-head h1 {
+  margin: 0;
+  font-size: 1.6rem;
+  letter-spacing: -0.03em;
+}
+
+.pl-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.planner .pill-select {
+  width: auto;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.planner button.pill {
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.pl-more {
+  position: relative;
+}
+
+.pl-more summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+}
+
+.pl-more summary::-webkit-details-marker {
+  display: none;
+}
+
+.pl-menu {
+  position: absolute;
+  right: 0;
+  z-index: 20;
+  display: grid;
+  min-width: 13rem;
+  margin-top: 0.3rem;
+  padding: 0.3rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 12%);
+}
+
+.planner .pl-menu button,
+.pl-menu a {
+  padding: 0.45rem 0.7rem;
+  border: 0;
+  border-radius: 6px;
+  text-align: left;
+}
+
+.planner .pl-menu button:hover {
+  background: var(--soft);
+}
+
+.pl-status {
+  min-height: 1.6rem;
+  margin: 0.4rem 0 0.6rem;
+  color: var(--muted);
+}
+
+.pl-status[data-tone='error'] {
+  color: var(--miss);
+}
+
+/* ---------------------------------------------------------------- loading */
+
+.pl-loading {
+  margin: 0 0 0.8rem;
+}
+
+.pl-loading[hidden] {
+  display: none;
+}
+
+.pl-bar {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--soft);
+}
+
+.pl-bar span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: repeating-linear-gradient(-45deg, var(--text), var(--text) 8px, var(--muted) 8px, var(--muted) 16px) 0 0 / 22.6px 100%;
+  transition: width 0.3s ease;
+  animation: pl-stripe 0.8s linear infinite;
+}
+
+@keyframes pl-stripe {
+  to {
+    background-position: 22.6px 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pl-bar span {
+    transition: none;
+    animation: none;
+  }
+}
+
+.pl-loading p {
+  margin: 0.3rem 0 0;
+}
+
+/* Nothing to interact with until the schedule and catalog are in. */
+.planner[data-state='loading'] .pl-grid {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------- layout */
+
+.pl-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 24rem;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.sheet {
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+}
+
+.sheet-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  align-items: baseline;
+  margin-bottom: 0.75rem;
+}
+
+.sheet-head h2 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.sheet-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.sheet-actions button {
+  white-space: nowrap;
+}
+
+.sheet-total {
+  flex: 1;
+  margin: 0;
+  color: var(--muted);
+}
+
+.empty-sheet {
+  padding: 2rem 1rem;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  text-align: center;
+}
+
+.empty-sheet p {
+  margin: 0.2rem 0;
+}
+
+/* ---------------------------------------------------------------- course table */
+
+.sheet-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.sheet-table th {
+  padding: 0.3rem 0.4rem;
+  border-bottom: 2px solid var(--text);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.sheet-table td {
+  padding: 0.45rem 0.4rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.sheet-table tr.issues td {
+  padding-top: 0;
+  font-size: 0.85em;
+}
+
+.sheet-table tr:has(+ tr.issues) td {
+  border-bottom: 0;
+}
+
+.sheet-table tfoot td {
+  border-bottom: 0;
+  font-weight: 600;
+  text-align: right;
+}
+
+.sheet-table tfoot td:nth-child(2) {
+  text-align: left;
+}
+
+.sheet-table select {
+  width: auto;
+  max-width: 13rem;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.9em;
+}
+
+.swatch {
+  display: inline-block;
+  width: 0.9rem;
+  height: 0.9rem;
+  margin-top: 0.2rem;
+  border: 2px solid;
+  border-radius: 4px;
+}
+
+/* ---------------------------------------------------------------- calendar */
+
+.calendar {
+  margin-top: 1.25rem;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: 3.2rem repeat(var(--days, 5), minmax(0, 1fr));
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.cal-head {
+  height: 1.8rem;
+  padding: 0.25rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--soft);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.cal-day {
+  border-left: 1px solid var(--line);
+  min-width: 0;
+}
+
+.cal-body {
+  position: relative;
+}
+
+.cal-hour {
+  position: absolute;
+  right: 0.3rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.cal-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px solid #eee;
+}
+
+.ev {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  min-height: 24px;
+  padding: 2px 5px;
+  border: 1.5px solid;
+  border-radius: 5px;
+  font-size: 0.74rem;
+  line-height: 1.25;
+  overflow: hidden;
+}
+
+.ev-top {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.ev b {
+  flex-shrink: 0;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.ev-time {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  opacity: 0.85;
+}
+
+/* --lines is set per block from its height: whole lines only, "…" on the last one. */
+.ev-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--lines, 1);
+  line-clamp: var(--lines, 1);
+  overflow: hidden;
+  overflow-wrap: break-word;
+}
+
+.ev.chapel {
+  align-items: center;
+  justify-content: center;
+  border-color: #999;
+  background: repeating-linear-gradient(45deg, #f1f1f1, #f1f1f1 5px, #e4e4e4 5px, #e4e4e4 10px);
+  color: #444;
+}
+
+.ev.conflict {
+  outline: 2.5px dashed var(--miss);
+  outline-offset: -1px;
+}
+
+/* Side-by-side (conflicting) blocks: code only, subject over number so it fits half a column. */
+.ev.narrow .ev-top {
+  display: block;
+}
+
+.ev.narrow b {
+  display: block;
+  white-space: normal;
+  line-height: 1.15;
+}
+
+.sheet-empty {
+  margin: 0.8rem 0 0;
+  padding: 1rem;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* No empty semester picker while the schedule is still loading. */
+.planner[data-state='loading'] #semester {
+  visibility: hidden;
+}
+
+/* ---------------------------------------------------------------- sidebar */
+
+.pl-side {
+  position: sticky;
+  top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 1.5rem);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  overflow: hidden;
+}
+
+.side-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-bottom: 1px solid var(--line);
+}
+
+.planner .side-tabs button {
+  padding: 0.65rem;
+  border: 0;
+  border-radius: 0;
+  background: var(--soft);
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.planner .side-tabs button[aria-selected='true'] {
+  background: var(--card);
+  color: var(--text);
+  box-shadow: inset 0 -2px 0 var(--text);
+}
+
+.side-pane {
+  display: grid;
+  gap: 0.5rem;
+  align-content: start;
+  padding: 0.85rem;
+  overflow: auto;
+}
+
+.side-pane[hidden] {
+  display: none;
+}
+
+.hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+.results {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.results .empty,
+.list-note {
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+.result {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+}
+
+.planner .result-head {
+  display: grid;
+  /* Fixed code column (fits half-hour codes like COMM 1000.5) so every title starts at the same x. */
+  grid-template-columns: minmax(6.7em, max-content) 1fr auto;
+  gap: 0.5rem;
+  align-items: baseline;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: 0;
+  background: none;
+  text-align: left;
+}
+
+.result .code {
+  font-weight: 650;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.result .title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.9em;
+}
+
+.result.open .title {
+  white-space: normal;
+}
+
+.result .meta {
+  color: var(--muted);
+  font-size: 0.78em;
+  white-space: nowrap;
+}
+
+.result-body {
+  padding: 0 0.6rem 0.6rem;
+  font-size: 0.86em;
+}
+
+.result-body p {
+  margin: 0 0 0.4rem;
+}
+
+.result-body .desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.result-body .desc.full {
+  display: block;
+  overflow: visible;
+}
+
+.planner .result-body .read-all {
+  margin-bottom: 0.4rem;
+}
+
+.sections {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sections li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.2rem 0.5rem;
+  align-items: center;
+  padding: 0.4rem 0.5rem;
+  border-radius: 6px;
+  background: var(--soft);
+}
+
+.sections li > .bad {
+  grid-column: 1;
+}
+
+/* ---------------------------------------------------------------- my major */
+
+.history,
+.prog {
+  display: grid;
+  gap: 0.35rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.history h3,
+.prog h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.history p,
+.prog p {
+  margin: 0;
+}
+
+.history > button {
+  justify-self: start;
+}
+
+.hist {
+  margin: 0.3rem 0;
+  padding-left: 1rem;
+  font-size: 0.85em;
+}
+
+.prog summary,
+.history summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.88em;
+}
+
+.need {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.2rem 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.88em;
+}
+
+.need li {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.3rem 0.4rem 0.3rem 1.5rem;
+  border-radius: 6px;
+}
+
+.need li::before {
+  position: absolute;
+  top: 0.3rem;
+  left: 0.45rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.need li.missing::before {
+  content: '○';
+}
+
+.need li.planned::before {
+  content: '◐';
+  color: var(--plan);
+}
+
+.need li.done::before {
+  content: '✓';
+  color: var(--ok);
+}
+
+.need li.manual::before {
+  content: '?';
+  color: var(--warn);
+}
+
+.planner .need .add {
+  padding: 0 0.55rem;
+  font-size: 0.9em;
+}
+
+.need li.choose {
+  display: block;
+}
+
+.options {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0.3rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Nested option rows: no status glyph, course + title on the left, Add on the right. */
+.need .options li.opt {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.15rem 0;
+}
+
+.need .options li.opt::before {
+  content: none;
+}
+
+.tag-ok {
+  color: var(--ok);
+  font-size: 0.85em;
+}
+
+.grad {
+  margin: 0;
+}
+
+.pl-foot {
+  margin-top: 2rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.8em;
+}
+
+/* ---------------------------------------------------------------- dialogs */
+
+dialog {
+  width: min(calc(100% - 2rem), 40rem);
+  max-height: calc(100vh - 2rem);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--text);
+}
+
+dialog::backdrop {
+  background: rgb(0 0 0 / 35%);
+}
+
+.dlg {
+  display: grid;
+  gap: 0.6rem;
+  padding: 1.2rem 1.35rem;
+  font-size: 0.93rem;
+}
+
+.dlg h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.dlg p {
+  margin: 0;
+}
+
+#dlg-body {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.fields {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.fields.two {
+  grid-template-columns: 1fr 1fr;
+}
+
+.fields label {
+  display: grid;
+  gap: 0.2rem;
+  font-weight: 600;
+  font-size: 0.9em;
+}
+
+.dlg .days {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.dlg .days legend {
+  margin-bottom: 0.3rem;
+  padding: 0;
+  font-weight: 600;
+  font-size: 0.9em;
+}
+
+.day-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.day-box {
+  display: inline-flex;
+  gap: 0.3rem;
+  align-items: center;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.dlg .day-box input {
+  margin: 0;
+  width: auto;
+}
+
+.find-custom {
+  justify-self: start;
+  font-size: 0.88em;
+}
+
+.find-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 1rem;
+  font-size: 0.88em;
+}
+
+.find-filters label {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+  cursor: pointer;
+}
+
+.find-filters label:has(input:disabled) {
+  color: var(--muted);
+  cursor: default;
+}
+
+.planner .find-filters input {
+  width: auto;
+  margin: 0;
+  padding: 0;
+}
+
+/* Rate My Professors link after an instructor's name. */
+.rmp {
+  display: inline-block;
+  margin-left: 0.25rem;
+  padding: 0 0.15rem;
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 0.95em;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.rmp:hover,
+.rmp:focus-visible {
+  background: var(--soft);
+  color: var(--link);
+}
+
+.dlg-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 0.4rem;
+}
+
+.pick {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.pick h3 {
+  margin: 0.3rem 0 0;
+  font-size: 0.95rem;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chips li {
+  padding: 0.15rem 0.2rem 0.15rem 0.65rem;
+  border-radius: 999px;
+  background: #dde3ff;
+}
+
+.dlg .chips button {
+  padding: 0 0.35rem;
+  border: 0;
+  background: none;
+}
+
+.dlg button.add-prog {
+  justify-self: start;
+}
+
+.pick-list {
+  display: grid;
+  max-height: 14rem;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  list-style: none;
+}
+
+.dlg .pick-list button {
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  border: 0;
+  border-radius: 0;
+  text-align: left;
+}
+
+.dlg .pick-list button:hover,
+.dlg .pick-list button:focus-visible {
+  background: var(--soft);
+}
+
+.year-field {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 0.9em;
+}
+
+.dlg .year-field select {
+  width: auto;
+}
+
+.table-wrap {
+  max-height: 55vh;
+  overflow: auto;
+}
+
+table.review {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86em;
+}
+
+table.review th,
+table.review td {
+  padding: 0.35rem;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+table.review input[type='checkbox'] {
+  width: auto;
+}
+
+tr.review-me {
+  background: #fff7e6;
+}
+
+/* ---------------------------------------------------------------- narrow screens */
+
+@media (max-width: 64rem) {
+  .pl-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pl-side {
+    position: static;
+    max-height: none;
+  }
+
+  .sheet-table thead {
+    display: none;
+  }
+
+  /* Each class becomes a card: swatch, course, hours and remove on the first line; details below. */
+  .sheet-table tr:not(.issues) {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    gap: 0 0.4rem;
+  }
+
+  .sheet-table tr:not(.issues) td {
+    border: 0;
+  }
+
+  .sheet-table tbody tr:not(.issues) td:nth-child(1) {
+    grid-area: 1 / 1;
+  }
+
+  .sheet-table tbody tr:not(.issues) td:nth-child(2) {
+    grid-area: 1 / 2;
+  }
+
+  .sheet-table tbody tr:not(.issues) td:nth-child(6) {
+    grid-area: 1 / 3;
+    white-space: nowrap;
+  }
+
+  .sheet-table tbody tr:not(.issues) td:nth-child(6)::after {
+    content: ' hrs';
+    color: var(--muted);
+    font-size: 0.85em;
+  }
+
+  .sheet-table tbody tr:not(.issues) td:nth-child(7) {
+    grid-area: 1 / 4;
+  }
+
+  .sheet-table tr:not(.issues) td:nth-child(3),
+  .sheet-table tr:not(.issues) td:nth-child(4),
+  .sheet-table tr:not(.issues) td:nth-child(5) {
+    grid-column: 2 / -1;
+    padding-top: 0;
+  }
+
+  .sheet-table tbody tr:not(.issues) {
+    border-bottom: 1px solid var(--line);
+  }
+}
+
+/* Phones: day columns are ~40px wide, so blocks show only the course code, wrapped as subject over number. */
+@media (max-width: 40rem) {
+  .cal-grid {
+    grid-template-columns: 2.6rem repeat(var(--days, 5), minmax(0, 1fr));
+  }
+
+  .ev {
+    padding: 2px 3px;
+  }
+
+  .ev-time,
+  .ev-title {
+    display: none;
+  }
+
+  .ev-top {
+    display: block;
+  }
+
+  .ev b {
+    display: block;
+    font-size: 0.72rem;
+    line-height: 1.15;
+    white-space: normal;
+  }
+
+  .ev.chapel b {
+    font-size: 0.68rem;
+  }
+}

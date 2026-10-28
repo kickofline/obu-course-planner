@@ -1,0 +1,102 @@
+/* Base reset, tokens, and typography for the standalone planner. Only what the planner and the
+   dialog need; the personal site's profile/home styles are intentionally absent. */
+
+:root {
+  --background: #fafafa;
+  --text: #202124;
+  --muted: #62656a;
+  --line: #dedede;
+  --link: #174ea6;
+  --measure: 43rem;
+  font-family: "Public Sans", Inter, "Segoe UI", Helvetica, Arial, sans-serif;
+  color: var(--text);
+  background: var(--background);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--text);
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+::selection {
+  background: #dbe8ff;
+}
+
+a {
+  color: var(--link);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+a:hover {
+  text-decoration-thickness: 2px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 4px;
+}
+
+.skip-link {
+  position: fixed;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 10;
+  padding: 0.45rem 0.7rem;
+  background: var(--text);
+  color: white;
+  transform: translateY(-180%);
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+.page {
+  width: min(calc(100% - 2.5rem), var(--measure));
+  min-height: 100vh;
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+main {
+  flex: 1;
+}
+
+h1 {
+  margin: 0 0 1.75rem;
+  color: var(--text);
+  font-size: clamp(2.5rem, 8vw, 4.5rem);
+  font-weight: 700;
+  letter-spacing: -0.055em;
+  line-height: 1;
+}
+
+h2,
+h3 {
+  line-height: 1.25;
+}
+
+p {
+  margin: 0 0 1.4rem;
+}
+
+@media (max-width: 34rem) {
+  .page {
+    width: min(calc(100% - 2rem), var(--measure));
+  }
+}

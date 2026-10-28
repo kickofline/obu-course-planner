@@ -1,0 +1,121 @@
+---
+// OBU pre-registration planner. Builds next semester's Pre-Registration Schedule worksheet from the
+// cached class schedule, checks picks against the catalog and the student's major, and downloads
+// the printable worksheet. The full plan stays in browser localStorage; links share only the focused
+// schedule. Analytics stays off.
+//
+// This page is the standalone deployment (served at /courses/). The personal site embeds it in an
+// iframe via public/embed.js; the embedded handshake lives in src/scripts/courses/bridge.js.
+import Base from '../layouts/Base.astro';
+import '../styles/courses.css';
+
+// Same-origin API by default (the standalone server serves /api/planner/v1). PUBLIC_PLANNER_API
+// points a dev build at a separate backend, and its origin is the only extra connect-src allowed.
+const apiBase = (import.meta.env.PUBLIC_PLANNER_API || '').trim();
+let devOrigin = '';
+try {
+  if (apiBase) devOrigin = new URL(apiBase).origin;
+} catch {
+  /* ignore a malformed override; api.js reports the failure at request time */
+}
+const connect = ["'self'", devOrigin].filter(Boolean).join(' ');
+const csp = `default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src ${connect}; worker-src 'self' blob:; frame-src blob:; img-src 'self' data: blob:; font-src 'self'; base-uri 'none'; form-action 'none'`;
+---
+
+<Base
+  title="OBU Pre-Registration Worksheet"
+  description="Pick your Ouachita Baptist University classes for next semester, see your week, check prerequisites and your major, and download a filled-in pre-registration worksheet."
+>
+  <Fragment slot="head">
+    <meta name="referrer" content="no-referrer" />
+    <!-- frame-ancestors is set by the server (HTTP header) so the personal site can embed this page. -->
+    <meta http-equiv="Content-Security-Policy" content={csp} />
+  </Fragment>
+
+  <div class="planner" id="planner" data-state="loading">
+    <header class="pl-head">
+      <h1>Pre-Registration Worksheet</h1>
+      <nav class="pl-tools" aria-label="Planner tools">
+        <label class="sr" for="semester">Semester</label>
+        <select id="semester" class="pill-select"></select>
+        <button type="button" class="pill" data-action="programs" id="program-pill">Choose your major</button>
+        <details class="pl-more">
+          <summary aria-label="More options">More</summary>
+          <div class="pl-menu">
+            <button type="button" data-action="share">Copy schedule link</button>
+            <button type="button" data-action="export">Download plan file</button>
+            <button type="button" data-action="import">Open plan file</button>
+            <button type="button" data-action="reset">Start over</button>
+          </div>
+        </details>
+      </nav>
+    </header>
+
+    <p class="pl-status" id="status" role="status" aria-live="polite"></p>
+    <div class="pl-loading" id="loading">
+      <div class="pl-bar" role="progressbar" aria-label="Loading course data" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <span id="loading-fill"></span>
+      </div>
+      <p class="muted small" id="loading-text">Loading the class schedule…</p>
+    </div>
+
+    <div class="pl-grid">
+      <section class="sheet" aria-labelledby="sheet-title">
+        <header class="sheet-head">
+          <h2 id="sheet-title">Your schedule</h2>
+          <p class="sheet-total" id="sheet-total"></p>
+          <div class="sheet-actions">
+            <button type="button" data-action="custom">+ Custom class</button>
+            <button type="button" data-action="download" id="download">Download</button>
+            <button type="button" class="primary" data-action="print" id="print">Print worksheet</button>
+          </div>
+        </header>
+        <div id="sheet-table"></div>
+        <div id="calendar" class="calendar" aria-label="Weekly schedule"></div>
+        <p class="muted small" id="snapshot-note"></p>
+      </section>
+
+      <aside class="pl-side" aria-label="Classes and requirements">
+        <div class="side-tabs" role="tablist">
+          <button type="button" role="tab" id="tab-find" aria-controls="pane-find" aria-selected="true" data-tab="find">Find classes</button>
+          <button type="button" role="tab" id="tab-req" aria-controls="pane-req" aria-selected="false" data-tab="req">My major</button>
+        </div>
+        <div class="side-pane" id="pane-find" role="tabpanel" aria-labelledby="tab-find">
+          <label class="sr" for="q">Search classes</label>
+          <input id="q" type="search" placeholder="Search: connections, smith, CORE 1023" autocomplete="off" />
+          <label class="sr" for="subject">Subject</label>
+          <select id="subject"><option value="">All subjects</option></select>
+          <div class="find-filters" role="group" aria-label="Filters">
+            <label><input type="checkbox" id="f-program" checked /> In my programs</label>
+            <label><input type="checkbox" id="f-fits" checked /> Fits my schedule</label>
+          </div>
+          <ul class="results" id="results" aria-label="Classes offered"></ul>
+          <button type="button" class="link find-custom" data-action="custom">Can't find a class? Add a custom class</button>
+        </div>
+        <div class="side-pane" id="pane-req" role="tabpanel" aria-labelledby="tab-req" hidden>
+          <div id="checklist" aria-live="polite"></div>
+        </div>
+      </aside>
+    </div>
+
+    <footer class="pl-foot">
+      <a href="https://github.com/kickofline/obu-course-planner" rel="noopener">Source on GitHub</a>
+    </footer>
+  </div>
+
+  <dialog id="dlg" aria-labelledby="dlg-title">
+    <form method="dialog" class="dlg" novalidate>
+      <h2 id="dlg-title"></h2>
+      <div id="dlg-body"></div>
+      <div class="dlg-actions" id="dlg-actions"></div>
+    </form>
+  </dialog>
+
+  <input type="file" id="file-json" accept="application/json,.json" hidden />
+
+  <noscript><p>This page needs JavaScript.</p></noscript>
+
+  <script>
+    import '../scripts/courses/planner.js';
+  </script>
+</Base>
