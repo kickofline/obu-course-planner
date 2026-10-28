@@ -1,0 +1,16 @@
+[Unit]
+Description=Refresh OBU course planner schedule snapshot
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/obu-course-planner/refresh.env
+ExecStart=/usr/bin/python3 /usr/local/lib/obu-course-planner/refresh_schedule.py
+TimeoutStartSec=3600
+Nice=10
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
