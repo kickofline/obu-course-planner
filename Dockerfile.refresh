@@ -10,9 +10,9 @@
 FROM node:24-bookworm-slim AS node
 FROM ghcr.io/astral-sh/uv:0.10.2 AS uv
 
-FROM python:3.13-slim-bookworm AS build
+FROM python:3.13-slim-trixie AS build
 COPY --from=uv /uv /usr/local/bin/uv
-# Node 24 matching this Debian release: the refresher's Node helper resolves its dependencies here.
+# Node's Bookworm binary also runs on Trixie's newer glibc (the proven browser runtime).
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
 ENV UV_LINK_MODE=copy \
@@ -27,7 +27,7 @@ RUN uv sync --frozen --no-dev --no-editable
 COPY browser/package.json browser/package-lock.json /app/browser/
 RUN node /usr/local/lib/node_modules/npm/bin/npm-cli.js ci --prefix /app/browser --no-audit --no-fund
 
-FROM python:3.13-slim-bookworm
+FROM python:3.13-slim-trixie
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=build /app/.venv /app/.venv
 COPY --from=build /app/browser /app/browser

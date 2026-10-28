@@ -19,6 +19,7 @@ let requestCount = 0;
 let closing = false;
 let networkError;
 let closePromise;
+let latestResponse;
 
 async function deadline(operation, milliseconds, message) {
   let timer;
@@ -36,24 +37,25 @@ async function start() {
   if (browser) return;
   browser = await puppeteer.launch({
     executablePath: process.env.OBU_BROWSER_EXECUTABLE,
-    headless: 'shell',
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-    // Restore Chrome's popup blocker: this transport drives exactly one page.
-    ignoreDefaultArgs: ['--disable-popup-blocking'],
+    headless: true,
+    args: ['--no-sandbox'],
     timeout: 30000,
     protocolTimeout: 90000,
   });
   page = await browser.newPage();
+  page.on('response', response => {
+    if (response.request().isNavigationRequest() && response.frame() === page.mainFrame()) latestResponse = response;
+  });
   await page.setBypassServiceWorker(true);
-  await page.setCacheEnabled(false);
   await page.setRequestInterception(true);
+  // Keep Chrome's cache headers and intercept child-frame requests through Puppeteer too.
+  await page.setCacheEnabled(true);
   page.on('request', request => {
     const dispatch = async () => {
       if (closing || request.isInterceptResolutionHandled()) return;
       await request.continue();
       if (/^https?:/.test(request.url())) requestCount += 1;
     };
-    // Puppeteer's page interception includes redirects, resources and child frames.
     const operation = /^https?:/.test(request.url()) ? pacer.run(dispatch) : dispatch();
     operation.catch(error => {
       if (!closing) networkError = error;
@@ -109,12 +111,17 @@ async function navigate(command) {
   } else {
     throw new Error(`Unsupported browser method: ${command.method}`);
   }
-  const status = response?.status();
-  if (!status || status < 200 || status >= 400) throw new Error(`OBU schedule returned HTTP ${status || 'no response'}`);
-  if (response.headers()['cf-mitigated'] === 'challenge') throw new Error('OBU returned a browser challenge');
+  // Match the proven browser probe: allow the page's own JavaScript/navigation
+  // to finish before judging an intermediate response. Never resubmit a request.
+  try {
+    await page.waitForSelector('form[action="CLASSSCHED.php"]', { timeout: 60000 });
+  } catch {
+    throw new Error(`OBU schedule unavailable: HTTP ${latestResponse?.status() || response?.status()}, ${await page.title()}`);
+  }
   await page.waitForNetworkIdle({ idleTime: 250, timeout: 90000, concurrency: 0 });
+  const status = latestResponse?.status() || response?.status();
+  if (!status || status < 200 || status >= 400) throw new Error(`OBU schedule returned HTTP ${status || 'no response'}`);
   if (networkError) throw networkError;
-  if (/just a moment|attention required/i.test(await page.title())) throw new Error('OBU returned a browser challenge');
   return { ok: true, html: await page.content(), status, request_count: requestCount };
 }
 

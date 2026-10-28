@@ -108,6 +108,10 @@ The transport is a stealth-patched headless browser against an upstream that blo
 clients: there is no CAPTCHA solving, no IP rotation, and no retry loop. A capture that fails or
 returns an incomplete listing is discarded, and the last complete snapshot stays in place.
 
+Stealth does not guarantee upstream access: Cloudflare may still return HTTP 403. Check the refresh
+service journal and the snapshot's capture timestamp before treating cached offerings as current;
+passing the local browser regression does not establish upstream availability.
+
 ```sh
 # Build the refresher (Node 24 + pinned Playwright headless shell baked in)
 docker build -f Dockerfile.refresh -t obu-course-planner-refresh:local .
@@ -145,6 +149,10 @@ export NODE_PATH="$PWD/browser/node_modules"
 export OBU_BROWSER_EXECUTABLE="$(node -e "console.log(require('playwright-core').chromium.executablePath())")"
 uv run python -m obu_course_planner.refresh --output /tmp/schedule-snapshot.json --delay 1
 ```
+
+With those browser variables exported, `npm test --prefix browser` also runs the real-browser
+regression against a local HTTP fixture (no OBU requests), including native JavaScript navigation,
+cookies, POST submission, subresources, and request pacing.
 
 ## License
 
