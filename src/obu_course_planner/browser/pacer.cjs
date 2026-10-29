@@ -5,7 +5,7 @@ const { setTimeout: sleep } = require('node:timers/promises');
 
 class RequestPacer {
   constructor(intervalMs = 1000, clock = () => performance.now(), wait = sleep) {
-    if (!Number.isFinite(intervalMs) || intervalMs < 1000) throw new RangeError('Minimum request interval is 1000 ms');
+    if (!Number.isFinite(intervalMs) || intervalMs < 100) throw new RangeError('Minimum request interval is 100 ms');
     this.intervalMs = intervalMs;
     this.clock = clock;
     this.wait = wait;

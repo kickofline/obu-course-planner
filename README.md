@@ -104,8 +104,8 @@ and the wheel-bundled site and never runs a browser. The healthcheck hits `/heal
 Snapshot refreshes use a separate image (`Dockerfile.refresh`), because the capture drives a headless
 browser. CSS, images, fonts, and media are blocked before reaching the network. HTML, JavaScript,
 fetch/XHR, and frame documents remain enabled for verification and form behavior. A Node helper
-(`browser/`) paces every remaining outbound HTTP(S) request — including redirects — to at most one
-per second; no browser ever runs on the request-serving path. The transport is a stealth-patched
+(`browser/`) paces every remaining outbound HTTP(S) request — including redirects — with a configurable
+interval (one second by default); no browser ever runs on the request-serving path. The transport is a stealth-patched
 headless browser against an upstream that blocks plain HTTP clients: there is no CAPTCHA solving,
 no IP rotation, and no retry loop. A capture that fails or returns an incomplete listing is discarded,
 and the last complete snapshot stays in place.
@@ -151,6 +151,10 @@ export NODE_PATH="$PWD/browser/node_modules"
 export OBU_BROWSER_EXECUTABLE="$(node -e "console.log(require('playwright-core').chromium.executablePath())")"
 uv run python -m obu_course_planner.refresh --output /tmp/schedule-snapshot.json --delay 1
 ```
+
+The default interval is one second. For an explicitly authorized faster capture, `--delay 0.1` permits
+at most ten requests per second; intervals below 0.1 seconds are rejected. This local override does
+not change the installed host runner's `--delay 1`.
 
 With those browser variables exported, `npm test --prefix browser` also runs the real-browser
 regression against a local HTTP fixture (no OBU requests), including native JavaScript navigation,

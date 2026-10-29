@@ -148,10 +148,10 @@ def refresh(output: Path, delay: float = 1.0) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=SNAPSHOT_PATH)
-    parser.add_argument("--delay", type=float, default=1.0, help="Minimum seconds between all browser HTTP(S) requests (no retries)")
+    parser.add_argument("--delay", type=float, default=1.0, help="Minimum seconds between browser requests (0.1-10; default: 1; no retries)")
     args = parser.parse_args()
-    if not 1 <= args.delay <= 10:
-        parser.error("--delay must be between 1 and 10 seconds")
+    if not 0.1 <= args.delay <= 10:
+        parser.error("--delay must be between 0.1 and 10 seconds")
     print(json.dumps(refresh(args.output, args.delay), indent=2))
 
 

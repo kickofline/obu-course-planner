@@ -7,8 +7,8 @@ const { RequestPacer } = require('./pacer.cjs');
 puppeteer.use(require('puppeteer-extra-plugin-stealth')());
 
 const interval = Number(process.argv[process.argv.indexOf('--interval-ms') + 1]);
-if (!Number.isFinite(interval) || interval < 1000 || interval > 10000) {
-  throw new Error('--interval-ms must be between 1000 and 10000');
+if (!Number.isFinite(interval) || interval < 100 || interval > 10000) {
+  throw new Error('--interval-ms must be between 100 and 10000');
 }
 if (!process.env.OBU_BROWSER_EXECUTABLE) throw new Error('OBU_BROWSER_EXECUTABLE is required');
 

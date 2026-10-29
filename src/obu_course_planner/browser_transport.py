@@ -15,8 +15,8 @@ class BrowserSession:
     """One browser/cookie session; the Node transport paces every network request."""
 
     def __init__(self, delay: float = 1.0) -> None:
-        if not 1 <= delay <= 10:
-            raise ValueError("Browser request interval must be between 1 and 10 seconds")
+        if not 0.1 <= delay <= 10:
+            raise ValueError("Browser request interval must be between 0.1 and 10 seconds")
         helper = Path(__file__).with_name("browser") / "transport.cjs"
         try:
             self._process = subprocess.Popen(

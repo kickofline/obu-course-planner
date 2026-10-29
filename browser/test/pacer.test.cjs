@@ -3,9 +3,9 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { RequestPacer } = require('../../src/obu_course_planner/browser/pacer.cjs');
 
-function clockedPacer() {
+function clockedPacer(intervalMs = 1000) {
   let now = 0;
-  const pacer = new RequestPacer(1000, () => now, async ms => {
+  const pacer = new RequestPacer(intervalMs, () => now, async ms => {
     // Deliberately wake early; the queue must recheck instead of granting early.
     now += Math.max(1, Math.floor(ms / 2));
   });
@@ -24,6 +24,17 @@ test('concurrent resources, redirect hops and post-idle bursts share one interva
   await Promise.all([send('post'), send('image'), send('iframe')]);
   assert.deepEqual(sent.map(([name]) => name), ['document', 'css', 'redirect', 'post', 'image', 'iframe']);
   assert.deepEqual(sent.map(([, at]) => at), [0, 1250, 2250, 12250, 13250, 14250]);
+});
+
+test('explicit ten-per-second pacing stays bounded after concurrency and idle time', async () => {
+  const { pacer, advance, now } = clockedPacer(100);
+  const sent = [];
+  const send = () => pacer.run(async () => { sent.push(now()); });
+  await Promise.all([send(), send(), send()]);
+  advance(10000);
+  await Promise.all([send(), send()]);
+  assert.deepEqual(sent, [0, 100, 200, 10200, 10300]);
+  assert.throws(() => new RequestPacer(99), RangeError);
 });
 
 test('failed continuation cannot jam the queue or let the next request burst', async () => {
