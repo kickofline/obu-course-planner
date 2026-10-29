@@ -102,11 +102,13 @@ and the wheel-bundled site and never runs a browser. The healthcheck hits `/heal
 ### Schedule refresh
 
 Snapshot refreshes use a separate image (`Dockerfile.refresh`), because the capture drives a headless
-browser. A Node helper (`browser/`) paces every outbound HTTP(S) request — including redirects and
-page subresources — to at most one per second, and no browser ever runs on the request-serving path.
-The transport is a stealth-patched headless browser against an upstream that blocks plain HTTP
-clients: there is no CAPTCHA solving, no IP rotation, and no retry loop. A capture that fails or
-returns an incomplete listing is discarded, and the last complete snapshot stays in place.
+browser. CSS, images, fonts, and media are blocked before reaching the network. HTML, JavaScript,
+fetch/XHR, and frame documents remain enabled for verification and form behavior. A Node helper
+(`browser/`) paces every remaining outbound HTTP(S) request — including redirects — to at most one
+per second; no browser ever runs on the request-serving path. The transport is a stealth-patched
+headless browser against an upstream that blocks plain HTTP clients: there is no CAPTCHA solving,
+no IP rotation, and no retry loop. A capture that fails or returns an incomplete listing is discarded,
+and the last complete snapshot stays in place.
 
 Stealth does not guarantee upstream access: Cloudflare may still return HTTP 403. Check the refresh
 service journal and the snapshot's capture timestamp before treating cached offerings as current;
@@ -152,7 +154,7 @@ uv run python -m obu_course_planner.refresh --output /tmp/schedule-snapshot.json
 
 With those browser variables exported, `npm test --prefix browser` also runs the real-browser
 regression against a local HTTP fixture (no OBU requests), including native JavaScript navigation,
-cookies, POST submission, subresources, and request pacing.
+cookies, POST submission, blocked presentation assets (including in child frames), and request pacing.
 
 ## License
 

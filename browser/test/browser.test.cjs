@@ -29,7 +29,12 @@ test('native JavaScript navigation can finish an intermediate 403 without unpace
       return send(200, 'setTimeout(() => location.replace("/CLASSSCHED.php"), 100);', 'application/javascript');
     }
     if (request.url === '/style.css') return send(200, 'table { color: black; }', 'text/css');
-    if (request.url === '/frame') return send(200, '<p>child frame</p>');
+    if (request.url === '/verify.js') {
+      return send(200, 'new FontFace("fixture", "url(/font.woff2)").load().catch(() => {});' +
+        'fetch("/verification").then(r => r.text()).then(value => document.querySelector("table").dataset.verified = value);', 'application/javascript');
+    }
+    if (request.url === '/verification') return send(200, 'ok', 'text/plain');
+    if (request.url === '/frame') return send(200, '<p>child frame</p><img src="/frame-pixel.png">');
     if (request.url !== '/CLASSSCHED.php') return send(404, 'missing');
     let body = '';
     request.on('data', chunk => { body += chunk; });
@@ -40,7 +45,8 @@ test('native JavaScript navigation can finish an intermediate 403 without unpace
       }
       response.setHeader('Set-Cookie', 'session=kept; Path=/');
       send(200, `<link rel="stylesheet" href="/style.css"><iframe src="http://localhost:${server.address().port}/frame"></iframe>` +
-        '<form action="CLASSSCHED.php"><input name="SEM_filt" value="227"></form><table class="mainlist"></table>');
+        '<img src="/pixel.png"><video preload="auto" src="/clip.webm"></video>' +
+        '<form action="CLASSSCHED.php"><input name="SEM_filt" value="227"></form><table class="mainlist"></table><script src="/verify.js"></script>');
     });
   });
   server.listen(0, '127.0.0.1');
@@ -69,6 +75,9 @@ test('native JavaScript navigation can finish an intermediate 403 without unpace
   const base = `http://127.0.0.1:${server.address().port}`;
   const opened = await command({ method: 'GET', url: base + '/start' });
   assert.equal(opened.status, 200); // The initial response was 403, not the final document.
+  assert.match(opened.html, /data-verified="ok"/, 'required JavaScript and fetch must still complete');
+  const presentationRequests = () => requests.filter(request => /\/(?:style\.css|(?:frame-)?pixel\.png|font\.woff2|clip\.webm)$/.test(request.url));
+  assert.deepEqual(presentationRequests(), [], 'presentation assets must not reach the server');
   const posted = await command({ method: 'POST', url: base + '/CLASSSCHED.php', data: { SEM_filt: '227', submit: 'filter', blank: '' } });
   assert.equal(posted.status, 200);
   const closed = await command({ method: 'CLOSE' });
@@ -77,6 +86,7 @@ test('native JavaScript navigation can finish an intermediate 403 without unpace
   assert.equal(requests.filter(request => request.url === '/start').length, 1);
   assert.equal(requests.filter(request => request.method === 'POST').length, 1);
   assert.ok(requests.some(request => request.url === '/frame'));
+  assert.deepEqual(presentationRequests(), [], 'presentation assets must remain blocked after POST and in child frames');
   for (let index = 1; index < requests.length; index++) {
     assert.ok(requests[index].at - requests[index - 1].at >= 990, 'browser requests escaped the shared one-second queue');
   }

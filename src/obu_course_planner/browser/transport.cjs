@@ -12,6 +12,7 @@ if (!Number.isFinite(interval) || interval < 1000 || interval > 10000) {
 }
 if (!process.env.OBU_BROWSER_EXECUTABLE) throw new Error('OBU_BROWSER_EXECUTABLE is required');
 
+const blockedResourceTypes = new Set(['stylesheet', 'image', 'font', 'media']);
 const pacer = new RequestPacer(interval);
 let browser;
 let page;
@@ -51,12 +52,17 @@ async function start() {
   // Keep Chrome's cache headers and intercept child-frame requests through Puppeteer too.
   await page.setCacheEnabled(true);
   page.on('request', request => {
+    const blocked = blockedResourceTypes.has(request.resourceType());
     const dispatch = async () => {
       if (closing || request.isInterceptResolutionHandled()) return;
+      if (blocked) {
+        await request.abort('blockedbyclient');
+        return;
+      }
       await request.continue();
       if (/^https?:/.test(request.url())) requestCount += 1;
     };
-    const operation = /^https?:/.test(request.url()) ? pacer.run(dispatch) : dispatch();
+    const operation = !blocked && /^https?:/.test(request.url()) ? pacer.run(dispatch) : dispatch();
     operation.catch(error => {
       if (!closing) networkError = error;
       if (!request.isInterceptResolutionHandled()) request.abort().catch(() => {});
