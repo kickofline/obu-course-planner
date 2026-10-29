@@ -103,8 +103,24 @@ def test_worksheet_endpoint(env):
     body = sheet.json()
     assert sheet.status_code == 200 and body["filename"] == "pre-registration-spring-2027.html"
     assert "&lt;b&gt;X&lt;/b&gt;" in body["html"]
-    assert 'Live: <a href="https://planner.example/courses">planner.example/courses</a>' in body["html"]
+    assert '<a href="https://planner.example/courses">planner.example/courses</a>' in body["html"] and "<svg" not in body["html"]
     assert client.post("/api/planner/v1/worksheet", json={"sequences": ["999"]}).status_code == 400
+
+
+def test_worksheet_edit_qr(env):
+    client, *_ = env
+    url = "/api/planner/v1/worksheet"
+    edit = "https://catalog.example/courses/#plan=cAbC_12-x"
+    html = client.post(url, json={"semester": "227", "sequences": ["1"], "edit_url": edit}).json()["html"]
+    qr = html[html.index('<div class="qr">'):]
+    # Bottom-right card: caption, QR, then the planner URL directly under it; footer text comes first.
+    assert html.index("Schedule updated") < html.index('<div class="qr">')
+    assert qr.index("Scan to edit") < qr.index("<svg") < qr.index(
+        '<a href="https://planner.example/courses">planner.example/courses</a>')
+    for bad in ["javascript:alert(1)", "https://evil.example/phish", "https://catalog.example/courses/#plan=c<x>",
+                edit + "a" * 2000, 7]:
+        response = client.post(url, json={"semester": "227", "sequences": ["1"], "edit_url": bad})
+        assert response.status_code == 400, bad
 
 
 def test_worksheet_custom_classes(env):

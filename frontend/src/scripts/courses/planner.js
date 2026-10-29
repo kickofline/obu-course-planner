@@ -3,7 +3,7 @@
 import * as api from './api.js';
 import * as P from './plan.js';
 import { initBridge, publishPlan } from './bridge.js';
-import { DAY_LABELS, DAY_ORDER, PALETTE, clashes, clock, parseDays, parseTime, week } from './schedule.js';
+import { DAY_LABELS, DAY_ORDER, PALETTE, clashes, clock, parseDays, parseTime, reviewSelections, week } from './schedule.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const root = $('#planner');
@@ -15,6 +15,7 @@ const S = {
   details: new Map(), // `${year}|${code}` -> full catalog entry, or a pending Promise
   catalogs: null,
   offerings: null,
+  refreshing: false,
   check: null,
   info: new Map(), // `${term}|${code}` -> {status, warnings} from the last check
   undo: [],
@@ -204,6 +205,21 @@ function problems(entry) {
   );
 }
 
+async function refreshSchedule(quiet = false) {
+  if (S.refreshing || root.dataset.state !== 'ready') return;
+  S.refreshing = true;
+  try {
+    S.offerings = await api.getOfferings();
+    renderAll();
+    scheduleCheck();
+    if (!quiet) status('Latest cached schedule loaded. Your saved choices have been rechecked.');
+  } catch (err) {
+    status(`Couldn't refresh the schedule (${err.message}). Still showing the previous cached listing.`, { tone: 'error' });
+  } finally {
+    S.refreshing = false;
+  }
+}
+
 // ------------------------------------------------------------------ worksheet
 
 function colorFor(i) {
@@ -212,8 +228,9 @@ function colorFor(i) {
 
 function renderSheet() {
   const sem = semester();
-  $('#sheet-title').textContent = sem ? sem.label : 'Next semester';
+  $('#sheet-title').textContent = sem?.label ?? (focus() ? termName(focus()) : 'Your schedule');
   const list = picks();
+  const review = reviewSelections(list, focus(), S.offerings);
   const table = $('#sheet-table');
   table.replaceChildren();
   const items = list.map((entry, i) => {
@@ -235,7 +252,7 @@ function renderSheet() {
           'table',
           { class: 'sheet-table' },
           h('thead', {}, h('tr', {}, ['', 'Course', 'Section', 'When', 'Instructor', 'Hours', ''].map((t) => h('th', { scope: 'col' }, t)))),
-          h('tbody', {}, list.map((entry, i) => sheetRow(entry, i, conflictCodes.has(entry.code), pairs))),
+          h('tbody', {}, list.map((entry, i) => sheetRow(entry, i, conflictCodes.has(entry.code), pairs, review.issues.find((w) => w.code === entry.code)))),
           h('tfoot', {}, h('tr', {}, h('td', { colspan: 5 }, 'Total credit hours'), h('td', {}, h('b', {}, fmt(total))), h('td', {}))),
         )
       : h('p', { class: 'sheet-empty' }, 'No classes yet. Add them from Find classes or My major, or add a custom class.'),
@@ -244,17 +261,48 @@ function renderSheet() {
   $('#sheet-total').replaceChildren(
     ...[
       list.length ? `${fmt(total)} credit hours` : '',
-      pairs.length ? h('span', { class: 'bad' }, ` · ${pairs.length} time conflict${pairs.length > 1 ? 's' : ''}`) : null,
       termWarn.length ? h('span', { class: 'warn' }, ` · ${termWarn.join(' ')}`) : null,
     ].filter(Boolean),
   );
-  const ready = list.some((e) => e.seq || e.custom);
+  const ready = !!sem && list.some((e) => e.custom || sectionOf(e));
   $('#print').disabled = !ready;
   $('#download').disabled = !ready;
+  renderValidation(list, review, pairs, wk);
   renderCalendar(wk);
-  $('#snapshot-note').textContent = sem
-    ? `Schedule updated ${new Date(sem.snapshot_at).toLocaleDateString()}.`
-    : '';
+  $('#snapshot-note').replaceChildren(
+    sem ? `Checked against the ${new Date(sem.snapshot_at).toLocaleString()} cached listing. ` : 'Listings are cached, not live. ',
+    'Confirm details with OBU before registering. ',
+    h('button', { type: 'button', class: 'link', 'data-action': 'refresh' }, 'Check latest schedule'),
+  );
+}
+
+function renderValidation(list, review, pairs, wk) {
+  const box = $('#schedule-validation');
+  box.hidden = !list.length;
+  if (!list.length) return;
+  const unavailable = review.issues.filter((w) => w.severity === 'error').length;
+  const unselected = review.issues.filter((w) => w.kind === 'unselected').length;
+  const unknownTimes = wk.unscheduled.filter((item) => {
+    const entry = list.find((e) => e.code === item.key);
+    return entry.custom || sectionOf(entry);
+  }).length;
+  const unchecked = !review.semester && list.some((e) => !e.custom);
+  const invalid = unavailable > 0 || pairs.length > 0;
+  const incomplete = unselected > 0 || unknownTimes > 0;
+  box.dataset.state = invalid ? 'invalid' : unchecked ? 'unchecked' : incomplete ? 'incomplete' : 'valid';
+  const details = [];
+  if (unavailable) details.push(`${unavailable} unavailable class selection${unavailable === 1 ? '' : 's'}`);
+  if (pairs.length) details.push(`${pairs.length} time conflict${pairs.length === 1 ? '' : 's'}`);
+  if (unselected) details.push(`${unselected} class${unselected === 1 ? ' needs' : 'es need'} a section`);
+  if (unknownTimes) details.push(`${unknownTimes} meeting${unknownTimes === 1 ? ' has' : 's have'} no checkable day/time`);
+  if (unchecked) details.push(`No cached listing for ${termName(focus())}; saved sections cannot be validated`);
+  box.replaceChildren(
+    h('strong', { class: invalid ? 'bad' : unchecked || incomplete ? 'warn' : '' },
+      invalid ? 'Schedule needs changes.' : unchecked ? 'Schedule not validated.' : incomplete ? 'Schedule needs review.' : 'Sections and times checked.'),
+    h('p', {}, details.length
+      ? `${details.join(' · ')}. Your saved choices are kept. Review the rows below.${unknownTimes || unavailable || unchecked ? ' Overlaps cannot be fully checked without listed meeting times.' : ''}`
+      : list.every((e) => e.custom) ? 'Custom meetings checked; no known time conflicts were found.' : 'All selected sections are listed and no known time conflicts were found for this semester.'),
+  );
 }
 
 /** One entry per overlapping pair, with the days it happens ("Overlaps CORE 2243 on Mon, Wed, Fri"). */
@@ -269,14 +317,13 @@ function conflictPairs(conflicts) {
   return [...byPair.values()];
 }
 
-function sheetRow(entry, i, conflict, conflicts) {
+function sheetRow(entry, i, conflict, conflicts, listingIssue) {
   const sections = entry.custom ? [] : sectionsFor(entry.code);
   const s = entry.custom ? null : sectionOf(entry);
   const issues = problems(entry);
   if (entry.custom) {
     if (!entry.days) issues.unshift({ severity: 'info', message: 'No meeting time set, so it is not on the calendar.' });
-  } else if (!sections.length) issues.unshift({ severity: 'warn', message: `Not on the ${semester()?.label ?? ''} schedule.` });
-  else if (!s) issues.unshift({ severity: 'warn', message: 'Pick a section.' });
+  } else if (listingIssue) issues.unshift(listingIssue);
   for (const c of conflicts) {
     if (c.a !== entry.code && c.b !== entry.code) continue;
     const other = c.a === entry.code ? c.b : c.a;
@@ -292,10 +339,12 @@ function sheetRow(entry, i, conflict, conflicts) {
             'aria-label': `Section for ${entry.code}`,
             onchange: (e) => addSection(entry.code, e.target.value),
           },
-          s ? null : h('option', { value: '' }, 'Choose…'),
+          s ? null : entry.seq
+            ? h('option', { value: entry.seq, selected: true, disabled: true }, `${entry.seq} · unavailable`)
+            : h('option', { value: '' }, 'Choose…'),
           sections.map((x) => h('option', { value: x.seq, selected: x.seq === entry.seq }, `${x.seq} · ${meetingText(x.days, x.time)}`)),
         )
-      : h('span', { class: 'muted' }, '—');
+      : h('span', { class: listingIssue?.severity === 'error' ? 'bad' : 'muted' }, entry.seq ? `${entry.seq} · ${semester() ? 'unavailable' : 'not verified'}` : '—');
   const when = entry.custom ? (entry.days ? `${dayText(entry.days)} ${clock(entry.start)}–${clock(entry.end)}` : 'TBA') : s ? meetingText(s.days, s.time) : '';
   const icon = { error: '⛔', warn: '⚠', info: 'ℹ' };
   return [
@@ -774,12 +823,13 @@ async function switchYear(year, ids) {
 /** Print or download the filled-in worksheet. Name and ID are only sent to render the page, never saved. */
 function worksheetDialog(mode) {
   const sem = semester();
-  const chosen = picks().filter((c) => c.seq);
+  const chosen = picks().filter((c) => !c.custom && sectionOf(c));
   const custom = picks().filter((c) => c.custom);
   const missing = picks().filter((c) => !c.seq && !c.custom).map((c) => c.code);
+  const unavailable = picks().filter((c) => c.seq && !c.custom && !sectionOf(c)).map((c) => `${c.code} (section ${c.seq})`);
   const name = h('input', { maxlength: 80, autocomplete: 'name' });
   const sid = h('input', { maxlength: 20, autocomplete: 'off' });
-  const build = () =>
+  const build = async () =>
     api.buildWorksheet({
       semester: sem.code,
       catalog_year: S.indexYear, // the printout uses the same catalog titles as the screen
@@ -787,6 +837,7 @@ function worksheetDialog(mode) {
       custom: custom.map((c) => ({ code: c.code, title: entryTitle(c), hours: hoursOf(c), ...(c.days ? { days: c.days, start: c.start, end: c.end } : {}) })),
       student_name: name.value,
       student_id: sid.value,
+      edit_url: await shareUrl(), // printed as a QR code; same schedule-only link as "Copy schedule link"
     });
   const run = (fn) => async () => {
     try {
@@ -803,6 +854,7 @@ function worksheetDialog(mode) {
     status('Worksheet downloaded.');
   });
   openDialog(`${mode === 'print' ? 'Print' : 'Download'} worksheet · ${sem.label}`, [
+    unavailable.length ? h('p', { class: 'bad' }, `Left off (no longer listed): ${unavailable.join(', ')}`) : null,
     missing.length ? h('p', { class: 'warn' }, `Left off (no section picked): ${missing.join(', ')}`) : null,
     h('div', { class: 'fields' }, h('label', {}, 'Name (optional)', name), h('label', {}, 'Student ID (optional)', sid)),
   ], [
@@ -878,7 +930,11 @@ function customDialog(existing = null) {
   code.focus();
 }
 
-/** Load a self-contained HTML page into a hidden same-origin frame (letter width at 96 dpi). */
+// The worksheet's printable width: letter minus 0.4in side margins, plus its 16px screen padding.
+const SHEET_PX = 7.7 * 96 + 32;
+const PAGE = { width: 8.5, height: 11, side: 0.4, top: 0.5 }; // inches; matches the worksheet's @page
+
+/** Load a self-contained HTML page into a hidden same-origin frame at the worksheet's print width. */
 function loadFrame(html) {
   const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
   const frame = h('iframe', {
@@ -886,7 +942,7 @@ function loadFrame(html) {
     title: 'Worksheet',
     'aria-hidden': 'true',
     tabindex: -1,
-    style: 'position:fixed;left:-10000px;top:0;width:816px;height:1056px;border:0',
+    style: `position:fixed;left:-10000px;top:0;width:${SHEET_PX}px;height:1056px;border:0`,
   });
   const cleanup = () => {
     frame.remove();
@@ -905,7 +961,7 @@ async function printHtml(html) {
   setTimeout(cleanup, 60000);
 }
 
-/** Rasterize the worksheet onto one letter page and save it as a PDF (libraries load only when used). */
+/** Rasterize the worksheet at full printable width with page margins, as the browser prints it (libraries load only when used). */
 async function downloadPdf(html, filename) {
   const [{ default: html2canvas }, { jsPDF }, { frame, cleanup }] = await Promise.all([
     import('html2canvas'),
@@ -913,17 +969,28 @@ async function downloadPdf(html, filename) {
     loadFrame(html),
   ]);
   try {
-    const doc = frame.contentDocument.documentElement;
-    const canvas = await html2canvas(doc, { scale: 2, backgroundColor: '#ffffff', windowWidth: 816, width: 816, height: doc.scrollHeight });
+    const body = frame.contentDocument.body;
+    const pad = parseFloat(frame.contentWindow.getComputedStyle(body).paddingLeft) || 0;
+    const box = body.getBoundingClientRect();
+    // Crop the screen padding so the content box maps exactly onto the printable area.
+    // 3x (~288 dpi) and lossless PNG keep the edit QR code's module edges sharp enough to scan.
+    const canvas = await html2canvas(body, {
+      scale: 3, backgroundColor: '#ffffff', windowWidth: SHEET_PX,
+      x: box.left + pad, y: box.top + pad, width: box.width - 2 * pad, height: box.height - 2 * pad,
+    });
     const pdf = new jsPDF({ unit: 'in', format: 'letter' });
-    const margin = 0.4;
-    let width = 8.5 - 2 * margin;
-    let height = (canvas.height / canvas.width) * width;
-    if (height > 11 - 2 * margin) {
-      height = 11 - 2 * margin;
-      width = (canvas.width / canvas.height) * height;
+    const width = PAGE.width - 2 * PAGE.side;
+    const perInch = canvas.width / width;
+    const slice = Math.floor((PAGE.height - 2 * PAGE.top) * perInch);
+    // Taller worksheets (many section notes) continue on further pages instead of shrinking.
+    for (let y = 0; canvas.height - y > 2; y += slice) {
+      if (y) pdf.addPage();
+      const part = document.createElement('canvas');
+      part.width = canvas.width;
+      part.height = Math.min(slice, canvas.height - y);
+      part.getContext('2d').drawImage(canvas, 0, -y);
+      pdf.addImage(part.toDataURL('image/png'), 'PNG', PAGE.side, PAGE.top, width, part.height / perInch, undefined, 'FAST');
     }
-    pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', (8.5 - width) / 2, margin, width, height);
     pdf.save(filename);
   } finally {
     cleanup();
@@ -932,10 +999,15 @@ async function downloadPdf(html, filename) {
 
 // ------------------------------------------------------------------ toolbar
 
+/** The schedule-only link (focused semester's classes and programs; no grades, notes, or history). */
+async function shareUrl() {
+  return `${location.origin}/courses/#plan=${await P.encodeShare(S.plan, S.offerings)}`;
+}
+
 async function share() {
   let url;
   try {
-    url = `${location.origin}/courses/#plan=${await P.encodeShare(S.plan, S.offerings)}`;
+    url = await shareUrl();
   } catch (err) {
     status(err.message, { tone: 'error' });
     return;
@@ -956,6 +1028,7 @@ function download(name, text, type) {
 
 const ACTIONS = {
   programs: () => programsDialog(),
+  refresh: () => refreshSchedule(),
   custom: () => customDialog(),
   print: () => worksheetDialog('print'),
   download: () => worksheetDialog('download'),
@@ -970,6 +1043,8 @@ const ACTIONS = {
 };
 
 function wire() {
+  window.addEventListener('focus', () => { if (!document.hidden) refreshSchedule(true); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshSchedule(true); });
   root.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-action]');
     if (btn && ACTIONS[btn.dataset.action]) {
@@ -995,12 +1070,17 @@ function wire() {
     const f = e.target.files?.[0];
     e.target.value = '';
     if (!f) return;
+    status('Opening plan and checking the latest cached schedule…');
     try {
       const plan = P.cleanPlan(JSON.parse(await f.text()));
+      const offerings = await api.getOfferings();
       if (plan.catalog_year !== S.plan.catalog_year) await loadIndex(plan.catalog_year);
       if (!plan.focus_term) plan.focus_term = S.plan.focus_term;
+      S.offerings = offerings;
+      S.check = null;
+      S.info.clear();
       commit(plan);
-      status('Plan opened.', { undoable: true });
+      status('Plan opened and checked against the latest cached schedule.', { undoable: true });
     } catch (err) {
       status(`Couldn't open that file (${err.message}).`, { tone: 'error' });
     }
@@ -1014,7 +1094,16 @@ const regularSemesters = () => (S.offerings?.semesters ?? []).filter((s) => /(FA
 
 function renderSemesters() {
   const sel = $('#semester');
-  sel.replaceChildren(...regularSemesters().map((s) => h('option', { value: s.term_id, selected: s.term_id === focus() }, s.label)));
+  const semesters = regularSemesters();
+  sel.replaceChildren(...semesters.map((s) => h('option', { value: s.term_id, selected: s.term_id === focus() }, s.label)));
+  // Keep saved semesters accessible even after they leave the snapshot; never move a saved schedule.
+  const saved = new Set(S.plan.terms.filter((t) => t.courses.length && /(FA|SP)$/.test(t.id)).map((t) => t.id));
+  if (focus()) saved.add(focus());
+  for (const id of saved) {
+    if (!semesters.some((s) => s.term_id === id)) {
+      sel.append(h('option', { value: id, selected: id === focus() }, termName(id)));
+    }
+  }
 }
 
 function renderSubjects() {
@@ -1135,8 +1224,7 @@ async function boot() {
       return;
     }
   }
-  const valid = new Set(regularSemesters().map((s) => s.term_id));
-  if (!valid.has(S.plan.focus_term)) S.plan.focus_term = defaultFocus();
+  if (!S.plan.focus_term) S.plan.focus_term = defaultFocus();
   ensureFocusTerm(S.plan);
   try {
     await indexLoad;

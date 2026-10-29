@@ -23,6 +23,8 @@ from .worksheet import course_label, parse_days, render as render_worksheet
 
 PREFIX = "/api/planner/v1"
 MAX_BODY = 256 * 1024
+# The frontend's "Copy schedule link" shape: https://host/courses/#plan=<compact token>.
+EDIT_URL = re.compile(r"https?://[A-Za-z0-9.-]+(?::\d{1,5})?/courses/#plan=[cs][A-Za-z0-9_-]+")
 
 
 def custom_rows(raw: object) -> list[dict]:
@@ -236,6 +238,11 @@ def routes(schedule: SnapshotScheduleClient, data: PlannerData, offerings: Offer
         if not isinstance(body, dict) or not isinstance(body.get("sequences"), list):
             raise PlanError("Send {\"semester\": ..., \"sequences\": [...]}.")
         name, student_id = str(body.get("student_name") or "")[:80], str(body.get("student_id") or "")[:20]
+        edit_url = body.get("edit_url") or ""
+        # Only the planner's own schedule link may become the printed QR code.
+        if not isinstance(edit_url, str) or (edit_url and (
+                len(edit_url) > 2000 or not EDIT_URL.fullmatch(edit_url))):
+            raise PlanError("edit_url must be this planner's schedule link.")
         custom = custom_rows(body.get("custom"))
         if not body["sequences"] and not custom:
             raise PlanError("Pick at least one section or add a custom class.")
@@ -255,7 +262,7 @@ def routes(schedule: SnapshotScheduleClient, data: PlannerData, offerings: Offer
             titled = [{**c, "title": index[course_label(c)]["title"]} if course_label(c) in index else c
                       for c in sections["courses"]]
             sections["courses"] = [*titled, *custom]
-            result = render_worksheet(sections, name.strip(), student_id.strip())
+            result = render_worksheet(sections, name.strip(), student_id.strip(), edit_url)
             return {"html": result["html"], "filename": result["suggested_filename"],
                     "conflicts": result["conflicts"], "total_credit_hours": result["total_credit_hours"]}
         return JSONResponse(await asyncio.to_thread(run))

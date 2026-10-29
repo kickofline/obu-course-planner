@@ -83,12 +83,25 @@ accepted — regenerate those links from the current page. "Download plan file" 
 as JSON, which can be imported back on any browser or device to move an entire plan (including
 grades, notes, and history) between the standalone page and an embed.
 
+Opening a plan file (and returning to the tab, or "Check latest schedule") fetches the latest cached
+listing, bypassing the browser's HTTP cache, and rechecks the focused semester's schedule. A saved
+section that the listing no longer has stays in the plan, marked "no longer listed" until the student
+picks another section or removes the class; moved meetings show up as new time conflicts. A semester
+absent from the cached listing is reported as not validated rather than unavailable, and custom
+classes are only checked for overlaps.
+
+Print and Download fill the letter page's printable width (0.4in sides, 0.5in top). Unavailable
+sections are left off the worksheet and named in the dialog. The bottom-right corner carries a QR code
+of the same schedule-only link as "Copy schedule link" (no grades, notes, history, name, or ID), with
+the `PLANNER_SITE_URL` address printed under it. The API renders the QR only for a link of the form
+`https://<host>/courses/#plan=<token>`.
+
 ## Tests
 
 ```sh
 uv run pytest
 
-cd frontend && npm test   # node --test, share-link round trips
+cd frontend && npm test   # node --test: share-link round trips, saved-schedule revalidation
 
 # Refresh browser pacing (no upstream traffic)
 cd ../browser && npm ci && npm test

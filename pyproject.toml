@@ -11,6 +11,7 @@ license = "MIT"
 license-files = ["LICENSE"]
 dependencies = [
   "beautifulsoup4>=4.13,<5",
+  "segno>=1.6,<2",
   "starlette>=1.10,<2",
   "uvicorn>=0.54,<1",
 ]

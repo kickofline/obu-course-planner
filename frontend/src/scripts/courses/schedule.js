@@ -118,3 +118,25 @@ export function clashes(candidate, chosen) {
   if (days.some((d) => CHAPEL.days.includes(d)) && span[0] < CHAPEL.end && CHAPEL.start < span[1]) out.push('Chapel');
   return out;
 }
+
+/** Recheck saved choices without replacing them. An uncached semester is unknown, not unavailable. */
+export function reviewSelections(entries, termId, offerings) {
+  const semester = offerings?.semesters.find((s) => s.term_id === termId) ?? null;
+  const issues = [];
+  if (!semester) return { semester, issues };
+  for (const entry of entries) {
+    if (entry.custom) continue;
+    const sections = (offerings.courses[entry.code] ?? []).filter((s) => s.term_id === termId);
+    if (entry.seq && !sections.some((s) => s.seq === entry.seq)) {
+      issues.push({
+        code: entry.code, severity: 'error', kind: 'missing-section',
+        message: `Section ${entry.seq} is no longer listed for ${semester.label}. Your saved choice is kept; choose another section or remove the class.`,
+      });
+    } else if (!sections.length) {
+      issues.push({ code: entry.code, severity: 'error', kind: 'missing-course', message: `This course is not on the ${semester.label} listing.` });
+    } else if (!entry.seq) {
+      issues.push({ code: entry.code, severity: 'warn', kind: 'unselected', message: 'Pick a section.' });
+    }
+  }
+  return { semester, issues };
+}

@@ -4,6 +4,7 @@
 const configured = (import.meta.env.PUBLIC_PLANNER_API || '').trim().replace(/\/+$/, '');
 export const API = `${configured}/api/planner/v1`;
 const INDEX_CACHE = 'obu-planner:index:';
+let offeringsRequest = null;
 // Earlier versions cached the whole ~1 MB catalog bundle; free that space.
 try {
   for (const key of Object.keys(localStorage)) if (key.startsWith('obu-planner:bundle:')) localStorage.removeItem(key);
@@ -53,7 +54,9 @@ export async function getCourse(year, code) {
 }
 
 export async function getOfferings() {
-  return json(await fetch(`${API}/offerings`));
+  // Imports and returning tabs must see a new capture even inside the API's ten-minute HTTP cache.
+  offeringsRequest ??= fetch(`${API}/offerings`, { cache: 'no-store' }).then(json).finally(() => { offeringsRequest = null; });
+  return offeringsRequest;
 }
 
 export async function checkPlan(plan, signal) {

@@ -5,6 +5,8 @@ from datetime import datetime
 from html import escape
 import re
 
+import segno
+
 from . import config
 
 # (fill, border/text) pairs that stay legible when printed in color or grayscale.
@@ -82,7 +84,13 @@ def layout(events: list[dict]) -> None:
     close()
 
 
-def render(sections: dict, student_name: str = "", student_id: str = "") -> dict:
+def edit_qr(url: str) -> str:
+    """Inline SVG QR code for the planner's own share link (schedule and programs only)."""
+    # A 4-module quiet zone (the QR standard's minimum) keeps phone scanners reliable.
+    return segno.make(url, error="m", micro=False).svg_inline(border=4, omitsize=True, title="Scan to edit this schedule")
+
+
+def render(sections: dict, student_name: str = "", student_id: str = "", edit_url: str = "") -> dict:
     # Copies: snapshot records are shared, cached objects.
     courses = [dict(c) for c in sections["courses"]]
     placed, unscheduled = [], []
@@ -169,19 +177,21 @@ def render(sections: dict, student_name: str = "", student_id: str = "") -> dict
 
     notes = [f"<li><b>{escape(course_label(c))}</b> (seq {escape(c['sequence'])}): {escape(n)}</li>"
              for c in courses for n in c.get("notes", [])]
+    site = config.site_url()
+    # Optional pointer back to the live planner (PLANNER_SITE_URL), shown as its URL without the scheme.
+    link = f'<a href="{escape(site)}">{escape(re.sub(r"^https?://", "", site))}</a>' if site else ""
+    qr = (f'<div class="qr"><b>Scan to edit</b>{edit_qr(edit_url)}{link}</div>') if edit_url else ""
     warnings = "".join(f"<li>{escape(c)}</li>" for c in conflicts)
     snapshot_text = datetime.fromisoformat(sections["snapshot_at"]).strftime("%b %d, %Y").replace(" 0", " ")
-    site = config.site_url()
-    # Optional pointer back to the live planner (PLANNER_SITE_URL), shown without the scheme.
-    live = f' Live: <a href="{escape(site)}">{escape(re.sub(r"^https?://", "", site))}</a>' if site else ""
     page = f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Pre-Registration Schedule - {escape(sections['semester_label'])}</title>
 <style>
-@page{{size:letter;margin:0.45in}}
+@page{{size:letter;margin:0.5in 0.4in}}
 *{{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
-body{{font-family:"Public Sans",Inter,"Segoe UI",Helvetica,Arial,sans-serif;color:#202124;max-width:7.6in;margin:0 auto;padding:16px;background:#fff;font-size:12px;line-height:1.35}}
+/* One letter page: 7.7in x 9.9in inside the margins, so the edit QR sits in the bottom-left corner. */
+body{{font-family:"Public Sans",Inter,"Segoe UI",Helvetica,Arial,sans-serif;color:#202124;max-width:calc(7.7in + 32px);min-height:calc(9.9in + 32px);margin:0 auto;padding:16px;display:flex;flex-direction:column;background:#fff;font-size:12px;line-height:1.35}}
 .head{{display:flex;justify-content:space-between;align-items:baseline;gap:16px;margin:0 0 10px}}
 h1{{margin:0;font-size:20px;letter-spacing:-.02em}}
 .sem{{font-size:15px;font-weight:700}} .sem span{{font-weight:400;color:#62656a;font-size:12px;margin-left:6px}}
@@ -211,10 +221,15 @@ tfoot td{{border-bottom:0;font-weight:600}}
 .chapel{{align-items:center;border-color:#999;background:repeating-linear-gradient(45deg,#f1f1f1,#f1f1f1 5px,#e4e4e4 5px,#e4e4e4 10px);color:#444}}
 .conflict{{outline:2.5px dashed #a52834;outline-offset:-1px}}
 .warn{{border:1.5px solid #a52834;border-radius:6px;color:#a52834;padding:6px 10px;margin:0 0 12px}}
-.warn ul,.foot ul{{margin:4px 0 0 18px;padding:0}}
-.foot{{font-size:10px;color:#62656a;margin-top:10px}}
+.warn ul,.notes ul{{margin:4px 0 0 18px;padding:0}}
+.notes,.foot{{font-size:10px;color:#62656a;margin-top:10px}}
+.foot{{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-top:auto;padding-top:10px;border-top:1px solid #dedede}}
+.foot p{{margin:0}}
 .foot a{{color:#174ea6}}
-@media print{{body{{padding:0;zoom:.86}}}}
+.qr{{display:flex;flex-direction:column;align-items:center;gap:2px;flex:none;padding:6px 8px 7px;border:1px solid #dedede;border-radius:8px;background:#fff;color:#202124;font-size:10px;line-height:1.2}}
+.qr b{{font-size:10px;letter-spacing:.02em}}
+.qr svg{{width:1.05in;height:1.05in;display:block}}
+@media print{{body{{max-width:none;min-height:9.9in;padding:0}}}}
 </style></head><body>
 <div class="head"><h1>Pre-Registration Schedule</h1>
 <div class="sem">{escape(sections['semester_label'])}<span>{hours_text} credit hours</span></div></div>
@@ -227,9 +242,10 @@ tfoot td{{border-bottom:0;font-weight:600}}
 <div class="reminder">Reminder: 1. Chapel (10 a.m., Tuesday)&nbsp;&nbsp; 2. Lunch</div>
 {f'<div class="warn"><b>Time conflicts:</b><ul>{warnings}</ul></div>' if conflicts else ""}
 <div class="cal"><div class="hours"><div class="dayhead"></div><div class="hourbody" style="height:{height}px">{hour_rows}</div></div>{columns}</div>
+{f'<div class="notes"><b>Section notes:</b><ul>{"".join(notes)}</ul></div>' if notes else ""}
 <div class="foot">
-{f"<b>Section notes:</b><ul>{''.join(notes)}</ul>" if notes else ""}
-<p>Schedule updated {escape(snapshot_text)}.{live}</p>
+<p>Schedule updated {escape(snapshot_text)}.{"" if qr else (" " + link if link else "")}</p>
+{qr}
 </div></body></html>"""
     return {
         "html": page,
