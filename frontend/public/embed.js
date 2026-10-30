@@ -19,12 +19,25 @@
       if (event.data?.type === 'obu-planner:ready') {
         let plan = null;
         try { plan = localStorage.getItem(key); } catch { /* storage disabled */ }
-        frame.contentWindow.postMessage({ type: 'obu-planner:init', plan }, origin);
+        // downloads: this loader saves worksheet PDFs and plan files for the frame (see below).
+        frame.contentWindow.postMessage({ type: 'obu-planner:init', plan, downloads: true }, origin);
         if (/^#plan=[A-Za-z0-9_-]+$/.test(location.hash)) {
           history.replaceState(null, '', location.pathname + location.search);
         }
       } else if (event.data?.type === 'obu-planner:save' && typeof event.data.plan === 'string') {
         try { localStorage.setItem(key, event.data.plan); } catch { /* storage disabled */ }
+      } else if (event.data?.type === 'obu-planner:download') {
+        // Firefox and Safari apply this page's CSP frame-src to downloads started inside the frame,
+        // so the frame hands finished files here and the page saves them as its own download.
+        const { name, blob } = event.data;
+        if (!(blob instanceof Blob) || !['application/pdf', 'application/json'].includes(blob.type)) return;
+        if (typeof name !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.(?:pdf|json)$/.test(name)) return;
+        const href = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = href;
+        link.download = name;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(href), 10000);
       }
     });
     mount.replaceChildren(frame);

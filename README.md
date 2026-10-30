@@ -70,6 +70,12 @@ API for in-memory processing, without storing it. The child accepts initializati
 parent (`document.referrer`) and publishes only after that handshake. HTTP `frame-ancestors` restricts
 embedding to `'self'` and the configured trusted origins.
 
+Downloads (worksheet PDFs and plan files) are saved by the host page: the child hands the finished
+file to the loader, which accepts only a PDF or JSON blob with a plain file name from its own frame.
+Firefox and Safari check the host page's CSP `frame-src` for downloads started inside the frame, so
+a host CSP that allows only the planner origin would otherwise block them; the host needs no `blob:`.
+Print renders the worksheet in a `srcdoc` frame, which is never fetched, so no `frame-src` applies.
+
 Because the two host pages live on different origins, list both the standalone origin (where
 `/courses/` is served, behind your proxy) and every embedding origin in `PLANNER_ALLOWED_ORIGINS`.
 

@@ -19,7 +19,8 @@ try {
   /* ignore a malformed override; api.js reports the failure at request time */
 }
 const connect = ["'self'", devOrigin].filter(Boolean).join(' ');
-const csp = `default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src ${connect}; worker-src 'self' blob:; frame-src blob:; img-src 'self' data: blob:; font-src 'self'; base-uri 'none'; form-action 'none'`;
+// frame-src 'none': the hidden worksheet frame uses srcdoc, which is never fetched.
+const csp = `default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src ${connect}; worker-src 'self' blob:; frame-src 'none'; img-src 'self' data: blob:; font-src 'self'; base-uri 'none'; form-action 'none'`;
 ---
 
 <Base

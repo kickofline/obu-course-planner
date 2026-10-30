@@ -2,7 +2,7 @@
 // is inserted with textContent, never as HTML.
 import * as api from './api.js';
 import * as P from './plan.js';
-import { initBridge, publishPlan } from './bridge.js';
+import { initBridge, publishPlan, requestDownload } from './bridge.js';
 import { DAY_LABELS, DAY_ORDER, PALETTE, clashes, clock, parseDays, parseTime, reviewSelections, week } from './schedule.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -28,6 +28,7 @@ const S = {
 // Embedding: the parent origin once the handshake succeeds (null standalone). Every save mirrors the
 // plan to the parent's localStorage so on-site and standalone visits share one plan.
 let bridgeOrigin = null;
+let parentDownloads = false; // the embedding loader saves files for us (see download())
 function persist() {
   P.savePlan(S.plan);
   publishPlan(bridgeOrigin, S.plan);
@@ -934,22 +935,21 @@ function customDialog(existing = null) {
 const SHEET_PX = 7.7 * 96 + 32;
 const PAGE = { width: 8.5, height: 11, side: 0.4, top: 0.5 }; // inches; matches the worksheet's @page
 
-/** Load a self-contained HTML page into a hidden same-origin frame at the worksheet's print width. */
+/**
+ * Load a self-contained HTML page into a hidden same-origin frame at the worksheet's print width.
+ * srcdoc, not a blob: URL: an embedding page's frame-src (which Firefox also enforces on frames
+ * created inside the embedded planner) would block a blob: frame, while srcdoc is never fetched.
+ */
 function loadFrame(html) {
-  const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
   const frame = h('iframe', {
-    src: url,
+    srcdoc: html,
     title: 'Worksheet',
     'aria-hidden': 'true',
     tabindex: -1,
     style: `position:fixed;left:-10000px;top:0;width:${SHEET_PX}px;height:1056px;border:0`,
   });
-  const cleanup = () => {
-    frame.remove();
-    URL.revokeObjectURL(url);
-  };
   return new Promise((resolve) => {
-    frame.addEventListener('load', () => resolve({ frame, cleanup }));
+    frame.addEventListener('load', () => resolve({ frame, cleanup: () => frame.remove() }));
     document.body.append(frame);
   });
 }
@@ -991,7 +991,8 @@ async function downloadPdf(html, filename) {
       part.getContext('2d').drawImage(canvas, 0, -y);
       pdf.addImage(part.toDataURL('image/png'), 'PNG', PAGE.side, PAGE.top, width, part.height / perInch, undefined, 'FAST');
     }
-    pdf.save(filename);
+    // Not pdf.save(): its fallback opens a blob: frame, which an embedding page's frame-src blocks.
+    download(filename, pdf.output('blob'), 'application/pdf');
   } finally {
     cleanup();
   }
@@ -1020,8 +1021,14 @@ async function share() {
   }
 }
 
-function download(name, text, type) {
-  const url = URL.createObjectURL(new Blob([text], { type }));
+/**
+ * Save a file. Embedded, the host page saves it: Firefox and Safari check the host page's CSP
+ * frame-src for downloads started inside this frame, and hosts typically list no blob:.
+ */
+function download(name, data, type) {
+  const blob = new Blob([data], { type });
+  if (bridgeOrigin && parentDownloads) return requestDownload(bridgeOrigin, name, blob);
+  const url = URL.createObjectURL(blob);
   h('a', { href: url, download: name }).click();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
@@ -1159,6 +1166,7 @@ async function boot() {
   // already reflects the on-site plan. Standalone or a silent parent resolves to the local copy.
   const embedding = await initBridge();
   bridgeOrigin = embedding.origin;
+  parentDownloads = embedding.downloads;
   let plan = P.loadPlan();
   if (embedding.plan) {
     try {
