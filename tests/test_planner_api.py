@@ -115,7 +115,7 @@ def test_worksheet_edit_qr(env):
     qr = html[html.index('<div class="qr">'):]
     # Bottom-right card: caption, QR, then the planner URL directly under it; footer text comes first.
     assert html.index("Schedule updated") < html.index('<div class="qr">')
-    assert qr.index("Scan to edit") < qr.index("<svg") < qr.index(
+    assert qr.index("Scan to edit") < qr.index(f'<a class="code" href="{edit}"><svg') < qr.index(
         '<a href="https://planner.example/courses">planner.example/courses</a>')
     for bad in ["javascript:alert(1)", "https://evil.example/phish", "https://catalog.example/courses/#plan=c<x>",
                 edit + "a" * 2000, 7]:

@@ -787,6 +787,9 @@
 }
 
 .pl-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.25rem;
   margin-top: 2rem;
   padding-top: 0.75rem;
   border-top: 1px solid var(--line);

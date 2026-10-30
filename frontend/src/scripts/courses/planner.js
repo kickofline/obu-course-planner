@@ -206,14 +206,14 @@ function problems(entry) {
   );
 }
 
-async function refreshSchedule(quiet = false) {
+/** Load the latest cached listing (tab return/focus) and recheck the schedule against it. */
+async function refreshSchedule() {
   if (S.refreshing || root.dataset.state !== 'ready') return;
   S.refreshing = true;
   try {
     S.offerings = await api.getOfferings();
     renderAll();
     scheduleCheck();
-    if (!quiet) status('Latest cached schedule loaded. Your saved choices have been rechecked.');
   } catch (err) {
     status(`Couldn't refresh the schedule (${err.message}). Still showing the previous cached listing.`, { tone: 'error' });
   } finally {
@@ -254,7 +254,8 @@ function renderSheet() {
           { class: 'sheet-table' },
           h('thead', {}, h('tr', {}, ['', 'Course', 'Section', 'When', 'Instructor', 'Hours', ''].map((t) => h('th', { scope: 'col' }, t)))),
           h('tbody', {}, list.map((entry, i) => sheetRow(entry, i, conflictCodes.has(entry.code), pairs, review.issues.find((w) => w.code === entry.code)))),
-          h('tfoot', {}, h('tr', {}, h('td', { colspan: 5 }, 'Total credit hours'), h('td', {}, h('b', {}, fmt(total))), h('td', {}))),
+          h('tfoot', {}, h('tr', {}, h('td', { colspan: 5 }, 'Total credit hours'), h('td', {}, h('b', {}, fmt(total))),
+            h('td', {}, h('button', { type: 'button', class: 'icon', 'aria-label': 'Copy schedule', title: 'Copy schedule', onclick: copySchedule }, '⧉')))),
         )
       : h('p', { class: 'sheet-empty' }, 'No classes yet. Add them from Find classes or My major, or add a custom class.'),
   );
@@ -270,17 +271,30 @@ function renderSheet() {
   $('#download').disabled = !ready;
   renderValidation(list, review, pairs, wk);
   renderCalendar(wk);
-  $('#snapshot-note').replaceChildren(
-    sem ? `Checked against the ${new Date(sem.snapshot_at).toLocaleString()} cached listing. ` : 'Listings are cached, not live. ',
-    'Confirm details with OBU before registering. ',
-    h('button', { type: 'button', class: 'link', 'data-action': 'refresh' }, 'Check latest schedule'),
-  );
 }
 
+/** Copy the focused schedule as tab-separated rows (pastes into a spreadsheet, notes, or email). */
+async function copySchedule() {
+  const rows = picks().map((entry) => {
+    const s = entry.custom ? null : sectionOf(entry);
+    const when = entry.custom
+      ? entry.days ? `${dayText(entry.days)} ${clock(entry.start)}–${clock(entry.end)}` : 'TBA'
+      : s ? meetingText(s.days, s.time) : '';
+    const section = entry.custom ? 'Custom' : s ? s.seq : entry.seq ? `${entry.seq} (no longer listed)` : '';
+    return [section, entry.code, entryTitle(entry), when, s?.instructor ?? '', fmt(hoursOf(entry))];
+  });
+  const text = [['Section', 'Course', 'Title', 'When', 'Instructor', 'Hours'], ...rows].map((r) => r.join('\t')).join('\n');
+  try {
+    await navigator.clipboard.writeText(text);
+    status('Schedule copied.');
+  } catch {
+    status("Couldn't copy to the clipboard in this browser.", { tone: 'error' });
+  }
+}
+
+/** Problems-only banner: nothing shows when the schedule checks out. */
 function renderValidation(list, review, pairs, wk) {
   const box = $('#schedule-validation');
-  box.hidden = !list.length;
-  if (!list.length) return;
   const unavailable = review.issues.filter((w) => w.severity === 'error').length;
   const unselected = review.issues.filter((w) => w.kind === 'unselected').length;
   const unknownTimes = wk.unscheduled.filter((item) => {
@@ -297,12 +311,12 @@ function renderValidation(list, review, pairs, wk) {
   if (unselected) details.push(`${unselected} class${unselected === 1 ? ' needs' : 'es need'} a section`);
   if (unknownTimes) details.push(`${unknownTimes} meeting${unknownTimes === 1 ? ' has' : 's have'} no checkable day/time`);
   if (unchecked) details.push(`No cached listing for ${termName(focus())}; saved sections cannot be validated`);
+  box.hidden = !details.length;
+  if (!details.length) return box.replaceChildren();
   box.replaceChildren(
-    h('strong', { class: invalid ? 'bad' : unchecked || incomplete ? 'warn' : '' },
-      invalid ? 'Schedule needs changes.' : unchecked ? 'Schedule not validated.' : incomplete ? 'Schedule needs review.' : 'Sections and times checked.'),
-    h('p', {}, details.length
-      ? `${details.join(' · ')}. Your saved choices are kept. Review the rows below.${unknownTimes || unavailable || unchecked ? ' Overlaps cannot be fully checked without listed meeting times.' : ''}`
-      : list.every((e) => e.custom) ? 'Custom meetings checked; no known time conflicts were found.' : 'All selected sections are listed and no known time conflicts were found for this semester.'),
+    h('strong', { class: invalid ? 'bad' : 'warn' },
+      invalid ? 'Schedule needs changes.' : unchecked ? 'Schedule not validated.' : 'Schedule needs review.'),
+    h('p', {}, `${details.join(' · ')}. Your saved choices are kept. Review the rows below.${unknownTimes || unavailable || unchecked ? ' Overlaps cannot be fully checked without listed meeting times.' : ''}`),
   );
 }
 
@@ -972,11 +986,26 @@ async function downloadPdf(html, filename) {
     const body = frame.contentDocument.body;
     const pad = parseFloat(frame.contentWindow.getComputedStyle(body).paddingLeft) || 0;
     const box = body.getBoundingClientRect();
+    const [left, top] = [box.left + pad, box.top + pad];
     // Crop the screen padding so the content box maps exactly onto the printable area.
     // 3x (~288 dpi) and lossless PNG keep the edit QR code's module edges sharp enough to scan.
     const canvas = await html2canvas(body, {
       scale: 3, backgroundColor: '#ffffff', windowWidth: SHEET_PX,
-      x: box.left + pad, y: box.top + pad, width: box.width - 2 * pad, height: box.height - 2 * pad,
+      x: left, y: top, width: box.width - 2 * pad, height: box.height - 2 * pad,
+      // html2canvas draws text a little lower than the browser and ignores line-clamp (it relies on the
+      // clip box), so clamped calendar titles lost their descenders (gjpqy). In its copy, cut each title
+      // to the lines it shows plus "…", then give the clip box room below without moving layout.
+      onclone: (doc) => {
+        for (const t of doc.querySelectorAll('.ev .title')) {
+          const lineHeight = parseFloat(doc.defaultView.getComputedStyle(t).lineHeight);
+          const shown = Math.max(1, Math.round(t.clientHeight / lineHeight)) * lineHeight;
+          const full = t.textContent;
+          t.style.cssText += ';display:block;-webkit-line-clamp:none;line-clamp:none;overflow:visible';
+          let n = full.length;
+          while (n > 0 && t.scrollHeight > shown + 1) t.textContent = `${full.slice(0, --n).trimEnd()}…`;
+          t.style.cssText += ';overflow:hidden;padding-bottom:3px;margin-bottom:-3px';
+        }
+      },
     });
     const pdf = new jsPDF({ unit: 'in', format: 'letter' });
     const width = PAGE.width - 2 * PAGE.side;
@@ -990,6 +1019,15 @@ async function downloadPdf(html, filename) {
       part.height = Math.min(slice, canvas.height - y);
       part.getContext('2d').drawImage(canvas, 0, -y);
       pdf.addImage(part.toDataURL('image/png'), 'PNG', PAGE.side, PAGE.top, width, part.height / perInch, undefined, 'FAST');
+    }
+    // The image drops the worksheet's links (the edit QR code and the planner URL); put them back as
+    // PDF link annotations. Page content is laid out at 96 CSS px per inch, as the browser prints it.
+    const pageCss = slice / perInch * 96;
+    for (const a of body.querySelectorAll('a[href^="http"]')) {
+      const r = a.getBoundingClientRect();
+      const page = Math.floor((r.top - top) / pageCss);
+      pdf.setPage(page + 1);
+      pdf.link(PAGE.side + (r.left - left) / 96, PAGE.top + (r.top - top - page * pageCss) / 96, r.width / 96, r.height / 96, { url: a.href });
     }
     // Not pdf.save(): its fallback opens a blob: frame, which an embedding page's frame-src blocks.
     download(filename, pdf.output('blob'), 'application/pdf');
@@ -1035,7 +1073,6 @@ function download(name, data, type) {
 
 const ACTIONS = {
   programs: () => programsDialog(),
-  refresh: () => refreshSchedule(),
   custom: () => customDialog(),
   print: () => worksheetDialog('print'),
   download: () => worksheetDialog('download'),
@@ -1050,8 +1087,8 @@ const ACTIONS = {
 };
 
 function wire() {
-  window.addEventListener('focus', () => { if (!document.hidden) refreshSchedule(true); });
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshSchedule(true); });
+  window.addEventListener('focus', () => { if (!document.hidden) refreshSchedule(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshSchedule(); });
   root.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-action]');
     if (btn && ACTIONS[btn.dataset.action]) {
@@ -1123,6 +1160,9 @@ function renderSubjects() {
 
 function renderAll() {
   renderPill();
+  $('#data-updated').textContent = S.offerings?.snapshot_at
+    ? `Course data updated ${new Date(S.offerings.snapshot_at).toLocaleDateString()}`
+    : '';
   renderSemesters();
   if (S.offerings) renderSubjects();
   renderSheet();

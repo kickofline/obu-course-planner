@@ -27,10 +27,16 @@ export function isEmbedded() {
   return typeof window !== 'undefined' && typeof document !== 'undefined' && window.parent !== window;
 }
 
-/** The parent's origin from document.referrer, or null when there is none / it is unparsable. */
+/**
+ * The embedder's origin: document.referrer, or location.ancestorOrigins where the host page's
+ * referrer policy (no-referrer) empties the referrer, as WebKit does despite the frame's own policy.
+ * Null when there is none / it is unparsable.
+ */
 function referrerOrigin() {
   try {
-    return document.referrer ? new URL(document.referrer).origin : null;
+    if (document.referrer) return new URL(document.referrer).origin;
+    const ancestor = location.ancestorOrigins?.[0];
+    return ancestor && ancestor !== 'null' ? new URL(ancestor).origin : null;
   } catch {
     return null;
   }

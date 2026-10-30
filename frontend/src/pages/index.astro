@@ -74,7 +74,6 @@ const csp = `default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inl
         <div id="schedule-validation" class="schedule-validation" role="status" aria-live="polite" hidden></div>
         <div id="sheet-table"></div>
         <div id="calendar" class="calendar" aria-label="Weekly schedule"></div>
-        <p class="muted small" id="snapshot-note"></p>
       </section>
 
       <aside class="pl-side" aria-label="Classes and requirements">
@@ -102,6 +101,7 @@ const csp = `default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inl
 
     <footer class="pl-foot">
       <a href="https://github.com/kickofline/obu-course-planner" target="_blank" rel="noopener noreferrer">Source on GitHub</a>
+      <span id="data-updated"></span>
     </footer>
   </div>
 

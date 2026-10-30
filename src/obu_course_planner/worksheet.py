@@ -180,7 +180,9 @@ def render(sections: dict, student_name: str = "", student_id: str = "", edit_ur
     site = config.site_url()
     # Optional pointer back to the live planner (PLANNER_SITE_URL), shown as its URL without the scheme.
     link = f'<a href="{escape(site)}">{escape(re.sub(r"^https?://", "", site))}</a>' if site else ""
-    qr = (f'<div class="qr"><b>Scan to edit</b>{edit_qr(edit_url)}{link}</div>') if edit_url else ""
+    # The QR code is also a link, so it can be clicked in a PDF or on screen.
+    qr = (f'<div class="qr"><b>Scan to edit</b><a class="code" href="{escape(edit_url)}">{edit_qr(edit_url)}</a>'
+          f'{link}</div>') if edit_url else ""
     warnings = "".join(f"<li>{escape(c)}</li>" for c in conflicts)
     snapshot_text = datetime.fromisoformat(sections["snapshot_at"]).strftime("%b %d, %Y").replace(" 0", " ")
     page = f"""<!DOCTYPE html>
@@ -223,12 +225,12 @@ tfoot td{{border-bottom:0;font-weight:600}}
 .warn{{border:1.5px solid #a52834;border-radius:6px;color:#a52834;padding:6px 10px;margin:0 0 12px}}
 .warn ul,.notes ul{{margin:4px 0 0 18px;padding:0}}
 .notes,.foot{{font-size:10px;color:#62656a;margin-top:10px}}
-.foot{{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-top:auto;padding-top:10px;border-top:1px solid #dedede}}
+.foot{{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-top:auto;padding-top:10px}}
 .foot p{{margin:0}}
 .foot a{{color:#174ea6}}
 .qr{{display:flex;flex-direction:column;align-items:center;gap:2px;flex:none;padding:6px 8px 7px;border:1px solid #dedede;border-radius:8px;background:#fff;color:#202124;font-size:10px;line-height:1.2}}
 .qr b{{font-size:10px;letter-spacing:.02em}}
-.qr svg{{width:1.05in;height:1.05in;display:block}}
+.qr svg{{width:1.05in;height:1.05in;display:block}} .qr a.code{{display:block}}
 @media print{{body{{max-width:none;min-height:9.9in;padding:0}}}}
 </style></head><body>
 <div class="head"><h1>Pre-Registration Schedule</h1>
