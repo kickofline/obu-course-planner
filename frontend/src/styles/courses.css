@@ -1,14 +1,14 @@
 /* OBU pre-registration worksheet builder. Status colors always pair with an icon or text. */
 
 .page--wide {
-  width: min(calc(100% - 1.5rem), 90rem);
+  width: min(calc(100% - 3rem), 90rem);
 }
 
 /* Tokens also apply to the dialog, which lives outside .planner. */
 .planner,
 #dlg {
   --ok: #17733f;
-  --plan: #0a4fb5;
+  --plan: var(--link);
   --miss: #a52834;
   --warn: #8a5a00;
   --card: #ffffff;
@@ -16,8 +16,8 @@
 }
 
 .planner {
-  padding-block: 1rem 2rem;
-  font-size: 0.93rem;
+  padding-block: 1.5rem 2rem;
+  font-size: 0.9375rem;
   line-height: 1.45;
 }
 
@@ -33,7 +33,8 @@
 .planner button,
 .dlg button {
   font: inherit;
-  padding: 0.4rem 0.8rem;
+  min-height: 2.25rem;
+  padding: 0.5rem 0.75rem;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--card);
@@ -58,14 +59,24 @@
   color: white;
 }
 
-.planner button.icon {
-  padding: 0 0.35rem;
+.planner button.quiet-action,
+.dlg button.quiet-action {
+  min-height: 2rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
   border-color: transparent;
   background: transparent;
   color: var(--muted);
 }
 
+.planner button.quiet-action:hover,
+.dlg button.quiet-action:hover {
+  background: var(--soft);
+  color: var(--text);
+}
+
 .planner button.link {
+  min-height: 0;
   padding: 0;
   border: 0;
   background: none;
@@ -80,7 +91,8 @@
 .dlg select {
   font: inherit;
   width: 100%;
-  padding: 0.45rem 0.6rem;
+  min-height: 2.5rem;
+  padding: 0.5rem 0.75rem;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--card);
@@ -92,7 +104,8 @@
 }
 
 .small {
-  font-size: 0.85em;
+  font-size: 0.75rem;
+  line-height: 1rem;
 }
 
 .warn {
@@ -115,26 +128,31 @@
 
 .pl-head h1 {
   margin: 0;
-  font-size: 1.6rem;
-  letter-spacing: -0.03em;
+  font-size: 1.75rem;
+  letter-spacing: 0;
 }
 
 .pl-tools {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: 0.5rem;
   align-items: center;
 }
 
 .planner .pill-select {
   width: auto;
-  border-radius: 999px;
-  font-weight: 600;
+  border-radius: 8px;
+  font-weight: 500;
 }
 
 .planner button.pill {
-  border-radius: 999px;
-  font-weight: 600;
+  min-width: 0;
+  max-width: 24rem;
+  overflow: hidden;
+  border-radius: 8px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .pl-more {
@@ -142,9 +160,12 @@
 }
 
 .pl-more summary {
+  display: flex;
+  align-items: center;
+  min-height: 2.5rem;
   list-style: none;
   cursor: pointer;
-  padding: 0.4rem 0.8rem;
+  padding: 0.5rem 0.75rem;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--card);
@@ -160,8 +181,8 @@
   z-index: 20;
   display: grid;
   min-width: 13rem;
-  margin-top: 0.3rem;
-  padding: 0.3rem;
+  margin-top: 0.5rem;
+  padding: 0.25rem;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--card);
@@ -170,7 +191,7 @@
 
 .planner .pl-menu button,
 .pl-menu a {
-  padding: 0.45rem 0.7rem;
+  padding: 0.5rem 0.75rem;
   border: 0;
   border-radius: 6px;
   text-align: left;
@@ -181,8 +202,8 @@
 }
 
 .pl-status {
-  min-height: 1.6rem;
-  margin: 0.4rem 0 0.6rem;
+  min-height: 1.25rem;
+  margin: 0.5rem 0 1rem;
   color: var(--muted);
 }
 
@@ -193,7 +214,7 @@
 /* ---------------------------------------------------------------- loading */
 
 .pl-loading {
-  margin: 0 0 0.8rem;
+  margin: 0 0 1rem;
 }
 
 .pl-loading[hidden] {
@@ -213,7 +234,6 @@
   height: 100%;
   border-radius: inherit;
   background: repeating-linear-gradient(-45deg, var(--text), var(--text) 8px, var(--muted) 8px, var(--muted) 16px) 0 0 / 22.6px 100%;
-  transition: width 0.3s ease;
   animation: pl-stripe 0.8s linear infinite;
 }
 
@@ -231,7 +251,7 @@
 }
 
 .pl-loading p {
-  margin: 0.3rem 0 0;
+  margin: 0.25rem 0 0;
 }
 
 /* Nothing to interact with until the schedule and catalog are in. */
@@ -250,7 +270,8 @@
 }
 
 .sheet {
-  padding: 1rem 1.1rem;
+  min-width: 0;
+  padding: 1.25rem;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--card);
@@ -266,13 +287,13 @@
 
 .sheet-head h2 {
   margin: 0;
-  font-size: 1.3rem;
+  font-size: 1.25rem;
 }
 
 .sheet-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: 0.5rem;
 }
 
 .sheet-actions button {
@@ -286,8 +307,8 @@
 }
 
 .schedule-validation {
-  margin-bottom: 0.8rem;
-  padding: 0.65rem 0.8rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
   border-left: 3px solid var(--ok);
   background: var(--soft);
 }
@@ -302,7 +323,7 @@
 }
 
 .schedule-validation p {
-  margin: 0.2rem 0 0;
+  margin: 0.25rem 0 0;
 }
 
 .empty-sheet {
@@ -313,7 +334,7 @@
 }
 
 .empty-sheet p {
-  margin: 0.2rem 0;
+  margin: 0.25rem 0;
 }
 
 /* ---------------------------------------------------------------- course table */
@@ -324,20 +345,25 @@
 }
 
 .sheet-table th {
-  padding: 0.3rem 0.4rem;
-  border-bottom: 2px solid var(--text);
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--line);
   color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 600;
+  font-size: 0.75rem;
+  font-weight: 500;
   text-align: left;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .sheet-table td {
-  padding: 0.45rem 0.4rem;
+  padding: 0.5rem;
   border-bottom: 1px solid var(--line);
   vertical-align: top;
+}
+
+.sheet-table th:nth-child(6),
+.sheet-table td:nth-child(6) {
+  text-align: right;
 }
 
 .sheet-table tr.issues td {
@@ -356,21 +382,22 @@
 }
 
 .sheet-table tfoot td:nth-child(2) {
-  text-align: left;
+  text-align: right;
 }
 
 .sheet-table select {
   width: auto;
   max-width: 13rem;
-  padding: 0.25rem 0.4rem;
-  font-size: 0.9em;
+  min-height: 2rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
 }
 
 .swatch {
   display: inline-block;
-  width: 0.9rem;
-  height: 0.9rem;
-  margin-top: 0.2rem;
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.25rem;
   border: 2px solid;
   border-radius: 4px;
 }
@@ -383,19 +410,19 @@
 
 .cal-grid {
   display: grid;
-  grid-template-columns: 3.2rem repeat(var(--days, 5), minmax(0, 1fr));
+  grid-template-columns: 3rem repeat(var(--days, 5), minmax(0, 1fr));
   border: 1px solid var(--line);
   border-radius: 10px;
   overflow: hidden;
 }
 
 .cal-head {
-  height: 1.8rem;
+  height: 2rem;
   padding: 0.25rem;
   border-bottom: 1px solid var(--line);
   background: var(--soft);
-  font-size: 0.8rem;
-  font-weight: 600;
+  font-size: 0.75rem;
+  font-weight: 500;
   text-align: center;
 }
 
@@ -410,9 +437,10 @@
 
 .cal-hour {
   position: absolute;
-  right: 0.3rem;
+  right: 0.25rem;
   color: var(--muted);
-  font-size: 0.7rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
 }
 
 .cal-line {
@@ -427,12 +455,12 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 1px;
+  gap: 2px;
   min-height: 24px;
-  padding: 2px 5px;
+  padding: 2px 4px;
   border: 1.5px solid;
   border-radius: 5px;
-  font-size: 0.74rem;
+  font-size: 0.75rem;
   line-height: 1.25;
   overflow: hidden;
 }
@@ -440,13 +468,13 @@
 .ev-top {
   display: flex;
   align-items: baseline;
-  gap: 0.4rem;
+  gap: 0.5rem;
   min-width: 0;
 }
 
 .ev b {
   flex-shrink: 0;
-  font-size: 0.82rem;
+  font-size: 0.875rem;
   white-space: nowrap;
 }
 
@@ -493,7 +521,7 @@
 }
 
 .sheet-empty {
-  margin: 0.8rem 0 0;
+  margin: 1rem 0 0;
   padding: 1rem;
   border: 1px dashed var(--line);
   border-radius: 8px;
@@ -510,10 +538,10 @@
 
 .pl-side {
   position: sticky;
-  top: 0.75rem;
+  top: 1.5rem;
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 1.5rem);
+  max-height: calc(100vh - 3rem);
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--card);
@@ -527,12 +555,12 @@
 }
 
 .planner .side-tabs button {
-  padding: 0.65rem;
+  padding: 0.75rem;
   border: 0;
   border-radius: 0;
   background: var(--soft);
   color: var(--muted);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .planner .side-tabs button[aria-selected='true'] {
@@ -545,7 +573,7 @@
   display: grid;
   gap: 0.5rem;
   align-content: start;
-  padding: 0.85rem;
+  padding: 1rem;
   overflow: auto;
 }
 
@@ -556,12 +584,12 @@
 .hint {
   margin: 0;
   color: var(--muted);
-  font-size: 0.85em;
+  font-size: 0.875rem;
 }
 
 .results {
   display: grid;
-  gap: 0.35rem;
+  gap: 0.5rem;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -570,7 +598,7 @@
 .results .empty,
 .list-note {
   color: var(--muted);
-  font-size: 0.85em;
+  font-size: 0.75rem;
 }
 
 .result {
@@ -581,28 +609,34 @@
 
 .planner .result-head {
   display: grid;
-  /* Fixed code column (fits half-hour codes like COMM 1000.5) so every title starts at the same x. */
-  grid-template-columns: minmax(6.7em, max-content) 1fr auto;
-  gap: 0.5rem;
-  align-items: baseline;
+  /* Codes and section counts share the first line; the title gets the full row below. */
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.25rem 0.5rem;
+  align-items: center;
+  min-height: 4rem;
   width: 100%;
-  padding: 0.45rem 0.6rem;
+  padding: 0.5rem 0.75rem;
   border: 0;
   background: none;
   text-align: left;
 }
 
 .result .code {
-  font-weight: 650;
+  grid-column: 1;
+  grid-row: 1;
+  font-weight: 600;
   white-space: nowrap;
-  font-variant-numeric: tabular-nums;
 }
 
 .result .title {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: 0.9em;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
 }
 
 .result.open .title {
@@ -610,18 +644,20 @@
 }
 
 .result .meta {
+  grid-column: 2;
+  grid-row: 1;
   color: var(--muted);
-  font-size: 0.78em;
+  font-size: 0.75rem;
   white-space: nowrap;
 }
 
 .result-body {
-  padding: 0 0.6rem 0.6rem;
-  font-size: 0.86em;
+  padding: 0 0.75rem 0.75rem;
+  font-size: 0.875rem;
 }
 
 .result-body p {
-  margin: 0 0 0.4rem;
+  margin: 0 0 0.5rem;
 }
 
 .result-body .desc {
@@ -637,12 +673,12 @@
 }
 
 .planner .result-body .read-all {
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.5rem;
 }
 
 .sections {
   display: grid;
-  gap: 0.35rem;
+  gap: 0.5rem;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -651,9 +687,9 @@
 .sections li {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 0.2rem 0.5rem;
+  gap: 0.25rem 0.5rem;
   align-items: center;
-  padding: 0.4rem 0.5rem;
+  padding: 0.5rem;
   border-radius: 6px;
   background: var(--soft);
 }
@@ -667,7 +703,7 @@
 .history,
 .prog {
   display: grid;
-  gap: 0.35rem;
+  gap: 0.5rem;
   padding-bottom: 0.75rem;
   border-bottom: 1px solid var(--line);
 }
@@ -688,43 +724,43 @@
 }
 
 .hist {
-  margin: 0.3rem 0;
+  margin: 0.5rem 0;
   padding-left: 1rem;
-  font-size: 0.85em;
+  font-size: 0.875rem;
 }
 
 .prog summary,
 .history summary {
   cursor: pointer;
   color: var(--muted);
-  font-size: 0.88em;
+  font-size: 0.875rem;
 }
 
 .need {
   display: grid;
   gap: 0.25rem;
-  margin: 0.2rem 0;
+  margin: 0.25rem 0;
   padding: 0;
   list-style: none;
-  font-size: 0.88em;
+  font-size: 0.875rem;
 }
 
 .need li {
   position: relative;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.3rem 0.5rem;
+  gap: 0.25rem 0.5rem;
   align-items: center;
   justify-content: space-between;
-  padding: 0.3rem 0.4rem 0.3rem 1.5rem;
+  padding: 0.25rem 0.5rem 0.25rem 1.5rem;
   border-radius: 6px;
 }
 
 .need li::before {
   position: absolute;
-  top: 0.3rem;
-  left: 0.45rem;
-  font-weight: 700;
+  top: 0.25rem;
+  left: 0.5rem;
+  font-weight: 500;
   color: var(--muted);
 }
 
@@ -748,8 +784,8 @@
 }
 
 .planner .need .add {
-  padding: 0 0.55rem;
-  font-size: 0.9em;
+  padding: 0 0.5rem;
+  font-size: 0.875rem;
 }
 
 .need li.choose {
@@ -758,8 +794,8 @@
 
 .options {
   display: grid;
-  gap: 0.2rem;
-  margin: 0.3rem 0 0;
+  gap: 0.25rem;
+  margin: 0.5rem 0 0;
   padding: 0;
   list-style: none;
 }
@@ -770,7 +806,7 @@
   gap: 0.5rem;
   align-items: center;
   justify-content: space-between;
-  padding: 0.15rem 0;
+  padding: 0.25rem 0;
 }
 
 .need .options li.opt::before {
@@ -789,12 +825,12 @@
 .pl-foot {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem 1.25rem;
+  gap: 0.5rem 1.25rem;
   margin-top: 2rem;
   padding-top: 0.75rem;
   border-top: 1px solid var(--line);
   color: var(--muted);
-  font-size: 0.8em;
+  font-size: 0.75rem;
 }
 
 /* ---------------------------------------------------------------- dialogs */
@@ -814,14 +850,14 @@ dialog::backdrop {
 
 .dlg {
   display: grid;
-  gap: 0.6rem;
-  padding: 1.2rem 1.35rem;
-  font-size: 0.93rem;
+  gap: 1rem;
+  padding: 1.5rem;
+  font-size: 0.9375rem;
 }
 
 .dlg h2 {
   margin: 0;
-  font-size: 1.15rem;
+  font-size: 1.25rem;
 }
 
 .dlg p {
@@ -830,12 +866,12 @@ dialog::backdrop {
 
 #dlg-body {
   display: grid;
-  gap: 0.6rem;
+  gap: 0.75rem;
 }
 
 .fields {
   display: grid;
-  gap: 0.6rem;
+  gap: 0.75rem;
 }
 
 .fields.two {
@@ -844,9 +880,9 @@ dialog::backdrop {
 
 .fields label {
   display: grid;
-  gap: 0.2rem;
+  gap: 0.25rem;
   font-weight: 600;
-  font-size: 0.9em;
+  font-size: 0.875rem;
 }
 
 .dlg .days {
@@ -856,23 +892,23 @@ dialog::backdrop {
 }
 
 .dlg .days legend {
-  margin-bottom: 0.3rem;
+  margin-bottom: 0.5rem;
   padding: 0;
   font-weight: 600;
-  font-size: 0.9em;
+  font-size: 0.875rem;
 }
 
 .day-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
+  gap: 0.5rem;
 }
 
 .day-box {
   display: inline-flex;
-  gap: 0.3rem;
+  gap: 0.5rem;
   align-items: center;
-  padding: 0.25rem 0.6rem;
+  padding: 0.5rem 0.75rem;
   border: 1px solid var(--line);
   border-radius: 6px;
   cursor: pointer;
@@ -881,23 +917,24 @@ dialog::backdrop {
 .dlg .day-box input {
   margin: 0;
   width: auto;
+  min-height: 0;
 }
 
 .find-custom {
   justify-self: start;
-  font-size: 0.88em;
+  font-size: 0.875rem;
 }
 
 .find-filters {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.3rem 1rem;
-  font-size: 0.88em;
+  gap: 0.5rem 1rem;
+  font-size: 0.875rem;
 }
 
 .find-filters label {
   display: inline-flex;
-  gap: 0.35rem;
+  gap: 0.5rem;
   align-items: center;
   cursor: pointer;
 }
@@ -910,6 +947,7 @@ dialog::backdrop {
 .planner .find-filters input {
   width: auto;
   margin: 0;
+  min-height: 0;
   padding: 0;
 }
 
@@ -917,12 +955,12 @@ dialog::backdrop {
 .rmp {
   display: inline-block;
   margin-left: 0.25rem;
-  padding: 0 0.15rem;
+  padding: 0 0.25rem;
   border-radius: 4px;
   color: var(--muted);
-  font-size: 0.95em;
-  line-height: 1;
-  text-decoration: none;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  text-decoration: underline;
 }
 
 .rmp:hover,
@@ -935,36 +973,36 @@ dialog::backdrop {
   display: flex;
   gap: 0.5rem;
   justify-content: flex-end;
-  margin-top: 0.4rem;
+  margin-top: 0.5rem;
 }
 
 .pick {
   display: grid;
-  gap: 0.4rem;
+  gap: 0.5rem;
 }
 
 .pick h3 {
-  margin: 0.3rem 0 0;
-  font-size: 0.95rem;
+  margin: 0.5rem 0 0;
+  font-size: 0.9375rem;
 }
 
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
+  gap: 0.5rem;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .chips li {
-  padding: 0.15rem 0.2rem 0.15rem 0.65rem;
-  border-radius: 999px;
-  background: #dde3ff;
+  padding: 0.25rem 0.5rem;
+  border-radius: 8px;
+  background: var(--soft);
 }
 
 .dlg .chips button {
-  padding: 0 0.35rem;
+  padding: 0 0.5rem;
   border: 0;
   background: none;
 }
@@ -986,7 +1024,7 @@ dialog::backdrop {
 
 .dlg .pick-list button {
   width: 100%;
-  padding: 0.4rem 0.6rem;
+  padding: 0.5rem 0.75rem;
   border: 0;
   border-radius: 0;
   text-align: left;
@@ -999,7 +1037,7 @@ dialog::backdrop {
 
 .year-field {
   display: block;
-  margin-top: 0.4rem;
+  margin-top: 0.5rem;
   font-size: 0.9em;
 }
 
@@ -1020,7 +1058,7 @@ table.review {
 
 table.review th,
 table.review td {
-  padding: 0.35rem;
+  padding: 0.5rem;
   border-bottom: 1px solid var(--line);
   text-align: left;
   vertical-align: top;
@@ -1028,6 +1066,7 @@ table.review td {
 
 table.review input[type='checkbox'] {
   width: auto;
+  min-height: 0;
 }
 
 tr.review-me {
@@ -1045,6 +1084,10 @@ tr.review-me {
     position: static;
     max-height: none;
   }
+}
+
+/* Let the worksheet use its compact rows before the two-panel layout runs out of room. */
+@media (max-width: 80rem) {
 
   .sheet-table thead {
     display: none;
@@ -1053,8 +1096,8 @@ tr.review-me {
   /* Each class becomes a card: swatch, course, hours and remove on the first line; details below. */
   .sheet-table tr:not(.issues) {
     display: grid;
-    grid-template-columns: auto 1fr auto auto;
-    gap: 0 0.4rem;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    gap: 0 0.5rem;
   }
 
   .sheet-table tr:not(.issues) td {
@@ -1066,6 +1109,7 @@ tr.review-me {
   }
 
   .sheet-table tbody tr:not(.issues) td:nth-child(2) {
+    overflow-wrap: anywhere;
     grid-area: 1 / 2;
   }
 
@@ -1084,15 +1128,24 @@ tr.review-me {
     grid-area: 1 / 4;
   }
 
-  .sheet-table tr:not(.issues) td:nth-child(3),
-  .sheet-table tr:not(.issues) td:nth-child(4),
-  .sheet-table tr:not(.issues) td:nth-child(5) {
+  .sheet-table tbody tr:not(.issues) td:nth-child(3),
+  .sheet-table tbody tr:not(.issues) td:nth-child(4),
+  .sheet-table tbody tr:not(.issues) td:nth-child(5) {
     grid-column: 2 / -1;
     padding-top: 0;
   }
 
   .sheet-table tbody tr:not(.issues) {
     border-bottom: 1px solid var(--line);
+  }
+
+  .sheet-table tfoot tr:not(.issues) {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+  }
+
+  .sheet-table tfoot td:first-child {
+    text-align: left;
   }
 
   /* Grid rows leave the table layout, so issue rows must too or they collapse into one column. */
@@ -1109,18 +1162,74 @@ tr.review-me {
 
   .sheet-table tr.issues td {
     display: block;
-    padding-left: 1.7rem;
+    padding-left: 2rem;
   }
 }
 
-/* Phones: day columns are ~40px wide, so blocks show only the course code, wrapped as subject over number. */
+/* Phones: keep day columns readable, with horizontal calendar scrolling on narrow screens. */
 @media (max-width: 40rem) {
+  .page--wide {
+    width: calc(100% - 2rem);
+  }
+
+  .planner {
+    padding-top: 1rem;
+  }
+
+  .pl-head h1 {
+    font-size: 1.5rem;
+  }
+
+  .pl-tools {
+    display: grid;
+    grid-template-columns: 8rem minmax(0, 1fr) auto;
+    width: 100%;
+  }
+
+  .planner .pill-select,
+  .planner button.pill {
+    width: 100%;
+    min-width: 0;
+    min-height: 2.5rem;
+  }
+
+  .sheet {
+    padding: 1rem;
+  }
+
+  .sheet-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: center;
+    gap: 0.5rem 1rem;
+  }
+
+  .sheet-actions {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sheet-actions .primary {
+    grid-column: 1 / -1;
+  }
+
+  .sheet-actions button,
+  .dlg-actions button {
+    min-height: 2.5rem;
+  }
+
+  .calendar {
+    overflow-x: auto;
+  }
+
   .cal-grid {
-    grid-template-columns: 2.6rem repeat(var(--days, 5), minmax(0, 1fr));
+    grid-template-columns: 2.5rem repeat(var(--days, 5), minmax(3.5rem, 1fr));
+    min-width: max-content;
   }
 
   .ev {
-    padding: 2px 3px;
+    padding: 2px 4px;
   }
 
   .ev-time,
@@ -1134,12 +1243,12 @@ tr.review-me {
 
   .ev b {
     display: block;
-    font-size: 0.72rem;
+    font-size: 0.75rem;
     line-height: 1.15;
     white-space: normal;
   }
 
   .ev.chapel b {
-    font-size: 0.68rem;
+    font-size: 0.75rem;
   }
 }

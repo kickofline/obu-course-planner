@@ -35,11 +35,11 @@ const csp = `default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inl
 
   <div class="planner" id="planner" data-state="loading">
     <header class="pl-head">
-      <h1>Pre-Registration Worksheet</h1>
+      <h1>Pre-registration worksheet</h1>
       <nav class="pl-tools" aria-label="Planner tools">
         <label class="sr" for="semester">Semester</label>
         <select id="semester" class="pill-select"></select>
-        <button type="button" class="pill" data-action="programs" id="program-pill">Choose your major</button>
+        <button type="button" class="pill" data-action="programs" id="program-pill" aria-haspopup="dialog">Choose your major</button>
         <details class="pl-more">
           <summary aria-label="More options">More</summary>
           <div class="pl-menu">
@@ -66,14 +66,14 @@ const csp = `default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inl
           <h2 id="sheet-title">Your schedule</h2>
           <p class="sheet-total" id="sheet-total"></p>
           <div class="sheet-actions">
-            <button type="button" data-action="custom">+ Custom class</button>
+            <button type="button" data-action="custom">Custom class</button>
             <button type="button" data-action="download" id="download">Download</button>
             <button type="button" class="primary" data-action="print" id="print">Print worksheet</button>
           </div>
         </header>
         <div id="schedule-validation" class="schedule-validation" role="status" aria-live="polite" hidden></div>
         <div id="sheet-table"></div>
-        <div id="calendar" class="calendar" aria-label="Weekly schedule"></div>
+        <div id="calendar" class="calendar" role="region" aria-label="Weekly schedule" tabindex="0"></div>
       </section>
 
       <aside class="pl-side" aria-label="Classes and requirements">
@@ -83,7 +83,7 @@ const csp = `default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inl
         </div>
         <div class="side-pane" id="pane-find" role="tabpanel" aria-labelledby="tab-find">
           <label class="sr" for="q">Search classes</label>
-          <input id="q" type="search" placeholder="Search: connections, smith, CORE 1023" autocomplete="off" />
+          <input id="q" type="search" placeholder="Course, title, or instructor" autocomplete="off" />
           <label class="sr" for="subject">Subject</label>
           <select id="subject"><option value="">All subjects</option></select>
           <div class="find-filters" role="group" aria-label="Filters">

@@ -13,6 +13,7 @@
   background: var(--background);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+  font-variant-numeric: tabular-nums;
 }
 
 * {
@@ -81,18 +82,24 @@ h1 {
   margin: 0 0 1.75rem;
   color: var(--text);
   font-size: clamp(2.5rem, 8vw, 4.5rem);
-  font-weight: 700;
-  letter-spacing: -0.055em;
-  line-height: 1;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.15;
 }
 
 h2,
 h3 {
   line-height: 1.25;
+  font-weight: 500;
 }
 
 p {
   margin: 0 0 1.4rem;
+}
+
+b,
+strong {
+  font-weight: 600;
 }
 
 @media (max-width: 34rem) {

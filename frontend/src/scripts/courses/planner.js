@@ -99,7 +99,7 @@ function rmpLink(instructor) {
       title: `${name} on Rate My Professors`,
       'aria-label': `${name} on Rate My Professors (opens in a new tab)`,
     },
-    '↗',
+    'Reviews',
   );
 }
 // Courses missing from the catalog (special topics, new courses) take their credit hours from the schedule.
@@ -255,7 +255,7 @@ function renderSheet() {
           h('thead', {}, h('tr', {}, ['', 'Course', 'Section', 'When', 'Instructor', 'Hours', ''].map((t) => h('th', { scope: 'col' }, t)))),
           h('tbody', {}, list.map((entry, i) => sheetRow(entry, i, conflictCodes.has(entry.code), pairs, review.issues.find((w) => w.code === entry.code)))),
           h('tfoot', {}, h('tr', {}, h('td', { colspan: 5 }, 'Total credit hours'), h('td', {}, h('b', {}, fmt(total))),
-            h('td', {}, h('button', { type: 'button', class: 'icon', 'aria-label': 'Copy schedule', title: 'Copy schedule', onclick: copySchedule }, '⧉')))),
+            h('td', {}, h('button', { type: 'button', class: 'quiet-action', 'aria-label': 'Copy schedule', title: 'Copy schedule', onclick: copySchedule }, 'Copy')))),
         )
       : h('p', { class: 'sheet-empty' }, 'No classes yet. Add them from Find classes or My major, or add a custom class.'),
   );
@@ -361,7 +361,7 @@ function sheetRow(entry, i, conflict, conflicts, listingIssue) {
         )
       : h('span', { class: listingIssue?.severity === 'error' ? 'bad' : 'muted' }, entry.seq ? `${entry.seq} · ${semester() ? 'unavailable' : 'not verified'}` : '—');
   const when = entry.custom ? (entry.days ? `${dayText(entry.days)} ${clock(entry.start)}–${clock(entry.end)}` : 'TBA') : s ? meetingText(s.days, s.time) : '';
-  const icon = { error: '⛔', warn: '⚠', info: 'ℹ' };
+  const severityLabel = { error: 'Issue', warn: 'Warning', info: 'Note' };
   return [
     h(
       'tr',
@@ -372,10 +372,10 @@ function sheetRow(entry, i, conflict, conflicts, listingIssue) {
       h('td', {}, when, s?.room ? h('div', { class: 'muted small' }, s.room) : null),
       h('td', {}, s?.instructor || '', rmpLink(s?.instructor), s && s.seats != null ? h('div', { class: `small ${s.seats > 0 ? 'muted' : 'bad'}` }, `${s.seats} seats`) : null),
       h('td', {}, fmt(hoursOf(entry))),
-      h('td', {}, h('button', { type: 'button', class: 'icon', 'aria-label': `Remove ${entry.code}`, onclick: () => removePick(entry.code) }, '✕')),
+      h('td', {}, h('button', { type: 'button', class: 'quiet-action', 'aria-label': `Remove ${entry.code}`, onclick: () => removePick(entry.code) }, 'Remove')),
     ),
     issues.length
-      ? h('tr', { class: 'issues' }, h('td', {}), h('td', { colspan: 6 }, issues.map((w) => h('div', { class: w.severity === 'error' ? 'bad' : w.severity === 'info' ? 'muted' : 'warn' }, `${icon[w.severity] ?? '⚠'} ${w.message}`))))
+      ? h('tr', { class: 'issues' }, h('td', {}), h('td', { colspan: 6 }, issues.map((w) => h('div', { class: w.severity === 'error' ? 'bad' : w.severity === 'info' ? 'muted' : 'warn' }, `${severityLabel[w.severity] ?? 'Warning'}: ${w.message}`))))
       : null,
   ];
 }
@@ -475,7 +475,7 @@ function renderFind() {
       .map((x) => x[1]);
   } else codes.sort();
   const matched = codes.length;
-  // Picked courses ("✓ added") and an exact course-code search always show, whatever the filters say.
+  // Picked courses and an exact course-code search always show, whatever the filters say.
   codes = codes.filter((c) => picked.has(c) || c === codeQuery || ((!byProgram || needed.has(c)) && (!byFit || fits(c))));
   const hidden = matched - codes.length;
   const sem = semester()?.label ?? 'this semester';
@@ -552,7 +552,7 @@ function resultItem(code, picked) {
       },
       h('span', { class: 'code' }, code),
       h('span', { class: 'title' }, titleOf(code)),
-      h('span', { class: 'meta' }, picked ? '✓ added' : `${rows.length} section${rows.length > 1 ? 's' : ''}`),
+      h('span', { class: 'meta' }, picked ? 'Added' : `${rows.length} section${rows.length > 1 ? 's' : ''}`),
     ),
     open
       ? h(
@@ -732,7 +732,8 @@ function programName(id) {
 
 function renderPill() {
   const names = S.plan.programs.filter((id) => id !== 'core').map(programName);
-  $('#program-pill').textContent = names.length ? `${names.join(' + ')} ▾` : 'Choose your major ▾';
+  $('#program-pill').textContent = names.length ? names.join(' + ') : 'Choose your major';
+  $('#program-pill').title = names.length ? names.join(' + ') : 'Choose your major';
 }
 
 const MAX_PER_KIND = 3;
@@ -760,7 +761,7 @@ function programsDialog(firstRun = false) {
         'ul',
         { class: 'chips' },
         mine.map((id) =>
-          h('li', {}, label(byId.get(id)), ' ', h('button', { type: 'button', class: 'icon', 'aria-label': `Remove ${label(byId.get(id))}`, onclick: () => (chosen.splice(chosen.indexOf(id), 1), draw()) }, '✕')),
+          h('li', {}, label(byId.get(id)), ' ', h('button', { type: 'button', class: 'quiet-action', 'aria-label': `Remove ${label(byId.get(id))}`, onclick: () => (chosen.splice(chosen.indexOf(id), 1), draw()) }, 'Remove')),
         ),
       );
       const parts = [h('h3', {}, kind === 'major' ? 'Majors' : 'Minors'), mine.length ? chips : h('p', { class: 'muted small' }, kind === 'major' ? 'No major yet.' : 'No minor yet.')];
@@ -788,7 +789,7 @@ function programsDialog(firstRun = false) {
         parts.push(input, list);
         queueMicrotask(() => input.focus());
       } else if (mine.length < MAX_PER_KIND) {
-        parts.push(h('button', { type: 'button', class: 'add-prog', onclick: () => { searching = kind; draw(); } }, kind === 'major' ? '+ Add a major' : '+ Add a minor'));
+        parts.push(h('button', { type: 'button', class: 'add-prog', onclick: () => { searching = kind; draw(); } }, kind === 'major' ? 'Add a major' : 'Add a minor'));
       }
       box.replaceChildren(...parts);
     }
