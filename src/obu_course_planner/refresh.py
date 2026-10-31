@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import tempfile
+from uuid import uuid4
 
 from .cfsolve_transport import CfsolveSession
 
@@ -119,17 +120,97 @@ def capture(delay: float = 1.0, today: date | None = None) -> dict:
     return result
 
 
+def section_delta(previous: dict | None, snapshot: dict) -> dict:
+    """Compare section content, not capture timestamps, listing order, or option defaults."""
+    def rows(data):
+        return {(sem, course_id(row)): row for sem, dataset in data["datasets"].items()
+                for row in dataset["courses"]}
+
+    before = rows(previous) if previous else {}
+    after = rows(snapshot)
+    added, removed, changed = [], [], []
+    if previous is not None:
+        for sem, identity in sorted(after.keys() - before.keys()):
+            added.append({"semester": sem, "section": after[sem, identity]})
+        for sem, identity in sorted(before.keys() - after.keys()):
+            removed.append({"semester": sem, "section": before[sem, identity]})
+        for key in sorted(before.keys() & after.keys()):
+            old, new = before[key], after[key]
+            fields = {}
+            for field in sorted(old.keys() | new.keys()):
+                left, right = old.get(field), new.get(field)
+                if field == "programs":
+                    left, right = sorted(left or []), sorted(right or [])
+                if left != right or (field in old) != (field in new):
+                    fields[field] = {"before": left, "after": right}
+            if fields:
+                changed.append({"semester": key[0], "section_id": key[1], "fields": fields})
+    return {
+        "baseline": previous is None,
+        "from_completed_at": previous["completed_at"] if previous else None,
+        "to_completed_at": snapshot["completed_at"],
+        "semesters_before": previous["semesters"] if previous else [],
+        "semesters_after": snapshot["semesters"],
+        "counts": {"added": len(added), "removed": len(removed), "changed": len(changed)},
+        "added": added, "removed": removed, "changed": changed,
+    }
+
+
+def history(output: Path):
+    """Read only the committed history chain, newest first; never contact OBU."""
+    snapshot = SnapshotScheduleClient(output)._load()
+    identity = snapshot.get("history_id")
+    seen = set()
+    while identity is not None:
+        if not re.fullmatch(r"[0-9a-f]{32}", identity) or identity in seen:
+            raise RuntimeError("Invalid schedule history chain.")
+        seen.add(identity)
+        record = json.loads((output.parent / "history" / f"{identity}.json").read_text(encoding="utf-8"))
+        yield record
+        identity = record["previous_id"]
+
+
 def refresh(output: Path, delay: float = 1.0) -> dict:
     """Failure updates status only; the last complete data file stays untouched."""
     status_path = output.parent / "refresh-status.json"
     started = now()
     try:
         snapshot = capture(delay)
+        previous = SnapshotScheduleClient(output)._load() if output.exists() else None
+        delta = section_delta(previous, snapshot)
         # Validate the complete candidate before replacing a working snapshot.
         with tempfile.TemporaryDirectory(dir=output.parent if output.parent.exists() else None) as directory:
             candidate = Path(directory) / "candidate.json"
             atomic_json(candidate, snapshot)
             SnapshotScheduleClient(candidate)._load()
+        # Immutable records are prepared first. The atomic snapshot replacement commits the
+        # history head and the data together; interrupted, unreferenced records are not history.
+        archive = output.parent / "history"
+        archive.mkdir(parents=True, exist_ok=True)
+        os.chmod(archive, 0o750)
+        previous_id = previous.get("history_id") if previous else None
+        if previous is not None and previous_id is None:
+            previous_id = uuid4().hex
+            atomic_json(archive / f"{previous_id}.json", {
+                "id": previous_id, "previous_id": None, "kind": "baseline",
+                "snapshot_completed_at": previous["completed_at"],
+                "section_count": sum(len(d["courses"]) for d in previous["datasets"].values()),
+            })
+        identity = uuid4().hex
+        atomic_json(archive / f"{identity}.json", {
+            "id": identity, "previous_id": previous_id, "kind": "capture",
+            "attempted_at": started, "snapshot_completed_at": snapshot["completed_at"],
+            "request_count": snapshot["request_count"], "delta": delta,
+        })
+        if os.name == "posix":
+            # Persist record names before publishing a snapshot that references them.
+            for directory in (archive, output.parent):
+                descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    os.fsync(descriptor)
+                finally:
+                    os.close(descriptor)
+        snapshot["history_id"] = identity
         atomic_json(output, snapshot)
     except Exception as exc:
         atomic_json(status_path, {"attempted_at": started, "finished_at": now(), "success": False,
@@ -140,7 +221,9 @@ def refresh(output: Path, delay: float = 1.0) -> dict:
               "snapshot_completed_at": snapshot["completed_at"], "source_url": SOURCE_URL,
               "request_count": snapshot["request_count"],
               "semester_count": len(snapshot["datasets"]),
-              "section_count": sum(len(d["courses"]) for d in snapshot["datasets"].values())}
+              "section_count": sum(len(d["courses"]) for d in snapshot["datasets"].values()),
+              "history_id": identity, "delta_counts": delta["counts"],
+              "refresh_policy": "hourly refresh; last complete snapshot retained on failure"}
     atomic_json(status_path, status)
     return status
 
@@ -149,7 +232,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=SNAPSHOT_PATH)
     parser.add_argument("--delay", type=float, default=1.0, help="Minimum seconds between outbound requests (0.1-10; default: 1; no retries)")
+    parser.add_argument("--history", action="store_true", help="Print committed capture deltas as JSON Lines, newest first; no network requests")
     args = parser.parse_args()
+    if args.history:
+        for record in history(args.output):
+            print(json.dumps(record, ensure_ascii=False))
+        return
     if not 0.1 <= args.delay <= 10:
         parser.error("--delay must be between 0.1 and 10 seconds")
     print(json.dumps(refresh(args.output, args.delay), indent=2))

@@ -1,4 +1,4 @@
-"""Offline section lookups over complete schedule snapshots with daily refresh provenance."""
+"""Offline section lookups over complete schedule snapshots with refresh provenance."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -79,7 +79,8 @@ class SnapshotScheduleClient:
             "snapshot_at": dataset["snapshot_at"],
             "snapshot_completed_at": snapshot["completed_at"],
             "snapshot_age_seconds": max(0, int((now - captured).total_seconds())),
-            "served_at": now.isoformat(), "refresh_policy": "daily refresh; last complete snapshot retained on failure",
+            "served_at": now.isoformat(),
+            "refresh_policy": refresh_status.get("refresh_policy", "scheduled refresh; last complete snapshot retained on failure"),
             "last_refresh": refresh_status,
             "notice": "Cached data may be out of date. Check the source URL for current offerings and enrollment.",
             "check_url": SOURCE_URL,

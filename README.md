@@ -153,7 +153,7 @@ docker buildx build --resource memory=4g --resource cpu-quota=100000 --load \
 
 `deploy/refresh_schedule.py` runs that image as a disposable, read-only, cap-dropped container
 (10002:10001, 1 CPU, 1 GB RAM, no swap, no retries); `deploy/obu-course-planner-refresh.{service,timer}` run it
-daily at 05:00 UTC, without touching the running API container.
+hourly, on the hour (UTC), without using the API container to perform captures.
 
 The output directory must be writable by UID 10002 and readable by the API's GID 10001. Configure
 the two variables above in the host environment file (mode `0600`), then install the runner and units:
@@ -184,6 +184,37 @@ uv run python -m obu_course_planner.refresh --output /tmp/schedule-snapshot.json
 The default interval is one second. For an explicitly authorized faster capture, `--delay 0.1`
 permits at most ten requests per second; intervals below 0.1 seconds are rejected. This local
 override does not change the installed host runner's `--delay 1`.
+
+Each validated capture records a compact section-level delta in `history/<id>.json` beside the
+snapshot. It includes added/removed section records and before/after values for changed fields
+(seats, times, rooms, instructors, notes, program membership, etc.). Identity is semester plus the
+existing sequence/department/course key; row order, program order, and capture timestamps do not
+count as section changes. Semester coverage is recorded before/after, so a term leaving the
+upcoming-only capture scope is distinguishable from a section disappearing within a retained term.
+Unchanged captures are also recorded with zero counts; `refresh-status.json` includes the latest
+`history_id` and `delta_counts`. The first tracked capture establishes a baseline rather than
+claiming every existing section was newly added.
+
+History records are written and synced before the snapshot's atomic replacement commits its
+`history_id`. Read the linked history, not every file in the directory: interrupted publication
+can leave unreferenced records, which are not committed history. A failed capture/publication
+does not advance the head. Only compact deltas are retained, not a full snapshot every hour;
+there is no automatic history pruning. Back up/restore the whole schedule volume, including
+both the current snapshot and `history/`.
+
+Read committed history as JSON Lines, newest first, without making any upstream requests:
+
+```sh
+uv run python -m obu_course_planner.refresh --output /path/to/schedule-snapshot.json --history
+
+# On the deployed host, as root (the env file contains the image/volume references):
+. /etc/obu-course-planner/refresh.env
+docker run --rm --network none --read-only --user 10002:10001 \
+  --memory 256m --memory-swap 256m --cpus 1 --cap-drop ALL --security-opt no-new-privileges \
+  --mount "type=volume,source=$OBU_PLANNER_VOLUME,target=/data/schedule,readonly" \
+  "$OBU_PLANNER_REFRESH_IMAGE" --output /data/schedule/schedule-snapshot.json --history
+```
+
 
 ## License
 
