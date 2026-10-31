@@ -15,6 +15,7 @@ There is no AI: no model calls, MCP endpoints, or server-side storage of student
 
 The worksheet stays first, with class search alongside it on desktop and below it on phones.
 Course swatches match their timetable blocks; neutral controls keep those course colors meaningful.
+Instructor review links appear in expanded section details, not in worksheet rows.
 Narrow phone calendars scroll horizontally and support keyboard navigation instead of clipping labels.
 The visual polish follows [unslop](https://github.com/heydamir/unslop), Damir Sokolovsky's
 [@heydamir](https://github.com/heydamir) design workflow, licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).

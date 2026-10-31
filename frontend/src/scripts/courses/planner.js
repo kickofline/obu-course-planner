@@ -370,7 +370,7 @@ function sheetRow(entry, i, conflict, conflicts, listingIssue) {
       h('td', {}, h('b', {}, entry.code), h('div', { class: 'muted small' }, entryTitle(entry))),
       h('td', {}, select),
       h('td', {}, when, s?.room ? h('div', { class: 'muted small' }, s.room) : null),
-      h('td', {}, s?.instructor || '', rmpLink(s?.instructor), s && s.seats != null ? h('div', { class: `small ${s.seats > 0 ? 'muted' : 'bad'}` }, `${s.seats} seats`) : null),
+      h('td', {}, s?.instructor || '', s && s.seats != null ? h('div', { class: `small ${s.seats > 0 ? 'muted' : 'bad'}` }, `${s.seats} seats`) : null),
       h('td', {}, fmt(hoursOf(entry))),
       h('td', {}, h('button', { type: 'button', class: 'quiet-action', 'aria-label': `Remove ${entry.code}`, onclick: () => removePick(entry.code) }, 'Remove')),
     ),
