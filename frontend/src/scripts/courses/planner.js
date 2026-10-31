@@ -603,16 +603,28 @@ function leaves(nodes, out = []) {
 function addButton(code) {
   const offered = sectionsFor(code).length > 0;
   const inSheet = picks().some((c) => c.code === code);
-  if (inSheet) return h('span', { class: 'tag-ok' }, 'on worksheet');
-  if (!offered) return h('span', { class: 'muted small' }, `not offered ${semester()?.label ?? ''}`);
-  return h('button', { type: 'button', class: 'add', onclick: () => addCourse(code) }, 'Add');
+  if (inSheet) return h('span', { class: 'need-state on-worksheet' }, 'On worksheet');
+  if (!offered) return h('span', { class: 'need-state muted' }, `Not offered ${semester()?.label ?? ''}`);
+  return h('button', { type: 'button', class: 'add', 'aria-label': `Add ${code} to worksheet`, onclick: () => addCourse(code) }, 'Add');
 }
+
+function requirementCourse(code, where) {
+  return h('span', { class: 'need-course' },
+    h('b', {}, code),
+    h('span', { class: 'need-title' }, titleOf(code)),
+    where && where.term !== focus() ? h('span', { class: 'muted small' }, termName(where.term)) : null,
+  );
+}
+
+const REQUIREMENT_STATUS = { planned: 'Planned', done: 'Completed', manual: 'Review' };
 
 function leafItem(l) {
   const n = l.node;
+  const label = REQUIREMENT_STATUS[l.status];
+  const status = label ? h('span', { class: `need-state ${l.status}` }, label) : null;
   if (l.kind === 'course') {
     const where = n.courses?.[0];
-    return h('li', { class: l.status }, h('span', {}, h('b', {}, n.course), ' ', titleOf(n.course), where && where.term !== focus() ? h('span', { class: 'muted' }, ` · ${termName(where.term)}`) : null), l.status === 'missing' ? addButton(n.course) : null);
+    return h('li', { class: l.status }, requirementCourse(n.course, where), l.status === 'missing' ? addButton(n.course) : status);
   }
   if (l.kind === 'hours') {
     const left = Math.max(0, n.hours_required - n.hours_planned);
@@ -622,7 +634,7 @@ function leafItem(l) {
       h('span', {}, `${n.hours_required} hours of `, h('b', {}, n.description), n.label ? h('span', { class: 'muted' }, ` (${n.label})`) : null, n.message ? h('div', { class: 'muted small' }, n.message) : null),
       l.status === 'missing'
         ? h('button', { type: 'button', class: 'add', onclick: () => browse(n.from) }, 'Browse')
-        : null,
+        : status,
     );
   }
   if (l.kind === 'choose') {
@@ -638,13 +650,13 @@ function leafItem(l) {
         { class: 'options' },
         n.items.map((i) =>
           i.type === 'course'
-            ? h('li', { class: 'opt' }, h('span', {}, h('b', {}, i.course), ' ', titleOf(i.course)), addButton(i.course))
+            ? h('li', { class: 'opt' }, requirementCourse(i.course), addButton(i.course))
             : h('li', { class: 'opt muted' }, i.label ?? i.type),
         ),
       ),
     );
   }
-  return h('li', { class: 'manual' }, h('span', {}, n.label ? h('b', {}, `${n.label}: `) : null, n.text));
+  return h('li', { class: 'manual' }, h('span', {}, n.label ? h('b', {}, `${n.label}: `) : null, n.text), status);
 }
 
 function renderMajor() {

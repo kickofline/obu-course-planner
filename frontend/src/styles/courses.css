@@ -738,54 +738,63 @@
 
 .need {
   display: grid;
-  gap: 0.25rem;
-  margin: 0.25rem 0;
+  gap: 0;
+  margin: 0.5rem 0;
   padding: 0;
   list-style: none;
   font-size: 0.875rem;
 }
 
 .need li {
-  position: relative;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 0.5rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem 1rem;
   align-items: center;
-  justify-content: space-between;
-  padding: 0.25rem 0.5rem 0.25rem 1.5rem;
-  border-radius: 6px;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--line);
 }
 
-.need li::before {
-  position: absolute;
-  top: 0.25rem;
-  left: 0.5rem;
-  font-weight: 500;
+.need li:last-child {
+  border-bottom: 0;
+}
+
+.need-course {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+  line-height: 1.25rem;
+}
+
+.need-title {
   color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
-.need li.missing::before {
-  content: '○';
+.need-state {
+  max-width: 7rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  text-align: right;
 }
 
-.need li.planned::before {
-  content: '◐';
+.need-state.planned {
   color: var(--plan);
 }
 
-.need li.done::before {
-  content: '✓';
+.need-state.done,
+.need-state.on-worksheet {
   color: var(--ok);
 }
 
-.need li.manual::before {
-  content: '?';
+.need-state.manual {
   color: var(--warn);
 }
 
 .planner .need .add {
-  padding: 0 0.5rem;
-  font-size: 0.875rem;
+  min-width: 3.5rem;
+  min-height: 2.25rem;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
 }
 
 .need li.choose {
@@ -794,28 +803,15 @@
 
 .options {
   display: grid;
-  gap: 0.25rem;
+  gap: 0;
   margin: 0.5rem 0 0;
-  padding: 0;
+  padding: 0 0 0 0.75rem;
+  border-left: 1px solid var(--line);
   list-style: none;
 }
 
-/* Nested option rows: no status glyph, course + title on the left, Add on the right. */
 .need .options li.opt {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.25rem 0;
-}
-
-.need .options li.opt::before {
-  content: none;
-}
-
-.tag-ok {
-  color: var(--ok);
-  font-size: 0.85em;
+  padding: 0.5rem 0;
 }
 
 .grad {
