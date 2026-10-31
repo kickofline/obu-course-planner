@@ -133,7 +133,7 @@ def test_capture_uses_listing_pages_only_and_merges_programs(tmp_path, monkeypat
                                                           heading="Patterson School of Natural Sciences" if page_number is None else None))
         rows = fixtures.course(2) if campus == "ONL" else fixtures.course(1)
         return httpx.Response(200, text=fixtures.page(state, rows, count=1))
-    monkeypatch.setattr(refresh, "BrowserSession", lambda **kw: fixtures.FakeBrowser(handler))
+    monkeypatch.setattr(refresh, "CfsolveSession", lambda **kw: fixtures.FakeSession(handler))
     data = refresh.capture()
     # 1 initial GET + per semester: 1 POST per program + extra pages; no all-programs request.
     assert data["request_count"] == len(log) == 4
@@ -167,7 +167,7 @@ def test_current_semester_is_never_requested_and_explained(tmp_path, monkeypatch
             state.update({k: v[0] for k, v in parse_qs(request.content.decode(), keep_blank_values=True).items()})
             posted.append(state["SEM_filt"])
         return httpx.Response(200, text=fixtures.page(state, fixtures.course(1), count=1))
-    monkeypatch.setattr(refresh, "BrowserSession", lambda **kw: fixtures.FakeBrowser(handler))
+    monkeypatch.setattr(refresh, "CfsolveSession", lambda **kw: fixtures.FakeSession(handler))
     data = refresh.capture(today=date(2026, 10, 27))
     assert set(posted) == {"227"} and data["request_count"] == 2
     assert list(data["datasets"]) == ["227"] and data["default_semester"] == "227"

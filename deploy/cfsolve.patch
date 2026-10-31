@@ -1,0 +1,606 @@
+diff --git a/examples/obu_refresh.rs b/examples/obu_refresh.rs
+new file mode 100644
+index 0000000..f3a4342
+--- /dev/null
++++ b/examples/obu_refresh.rs
+@@ -0,0 +1,93 @@
++//! JSONL transport for the Python schedule refresher; never prints tokens or cookies.
++use std::{io::{self, BufRead, Write}, path::PathBuf, time::Duration};
++use anyhow::{Context, Result, bail, ensure};
++use cfsolve::{Browser, Options, Url};
++use serde::Deserialize;
++use serde_json::{Value, json};
++
++#[derive(Deserialize)]
++struct Command {
++    method: String,
++    url: Option<String>,
++    #[serde(default)]
++    data: serde_json::Map<String, Value>,
++}
++
++// Do not leak challenge URLs, payloads or cookies through a wrapped upstream error chain.
++fn failure(error: &anyhow::Error) -> &'static str {
++    match error.downcast_ref::<cfsolve::Error>() {
++        Some(cfsolve::Error::Config(_)) => "Invalid native solver configuration",
++        Some(cfsolve::Error::Network(_)) => "Network request failed; capture aborted",
++        Some(cfsolve::Error::Unsupported(_)) => "Unsupported Cloudflare challenge; capture aborted",
++        Some(cfsolve::Error::Rejected { .. }) => "Cloudflare rejected this session; capture aborted",
++        Some(cfsolve::Error::Blocked { .. }) => "Upstream blocked this session; capture aborted",
++        Some(cfsolve::Error::Challenged { .. }) => "Unexpected challenge; capture aborted",
++        _ => "Schedule request failed or timed out; snapshot not replaced",
++    }
++}
++
++fn main() -> Result<()> {
++    let mut profile = PathBuf::from("/opt/cfsolve/profiles/safari-26-ios.json");
++    let mut interval_ms = 1000;
++    let mut args = std::env::args().skip(1);
++    while let Some(arg) = args.next() {
++        match arg.as_str() {
++            "--profile" => profile = args.next().context("Missing --profile value")?.into(),
++            "--interval-ms" => interval_ms = args.next().context("Missing --interval-ms value")?.parse()?,
++            _ => bail!("Unknown argument {arg}"),
++        }
++    }
++    ensure!((100..=10000).contains(&interval_ms), "Request interval must be 100-10000 ms");
++    let browser = Browser::read(profile)?;
++    let options = Options::default();
++    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build()?;
++    let outcome = rt.block_on(async {
++        let mut session = browser.refresh_session(&options, Duration::from_millis(interval_ms), 400,
++            vec!["info.obu.edu".into(), "challenges.cloudflare.com".into()])?;
++        let input = io::stdin();
++        let output = io::stdout();
++        let mut output = output.lock();
++        for line in input.lock().lines() {
++            let parsed: Result<Command> = (|| {
++                let line = line?;
++                ensure!(line.len() <= 65536, "Command exceeds 64 KiB");
++                Ok(serde_json::from_str(&line)?)
++            })();
++            let command = match parsed {
++                Ok(c) => c,
++                Err(_) => {
++                    writeln!(output, "{}", json!({"ok":false,"error":"Invalid refresh command","request_count":session.request_count()}))?;
++                    output.flush()?;
++                    break;
++                }
++            };
++            if command.method == "CLOSE" {
++                writeln!(output, "{}", json!({"ok":true,"request_count":session.request_count()}))?;
++                output.flush()?;
++                break;
++            }
++            let fields = command.data.into_iter().map(|(k, v)| {
++                Ok((k, v.as_str().context("Form values must be strings")?.to_owned()))
++            }).collect::<Result<Vec<_>>>();
++            let result = async {
++                let url = Url::parse(&command.url.context("Missing URL")?)?;
++                let fields = fields?;
++                match tokio::time::timeout(Duration::from_secs(100), session.request(&command.method, &url, &fields)).await {
++                    Ok(r) => r,
++                    Err(_) => bail!("Refresh request exceeded 100 seconds"),
++                }
++            }.await;
++            let failed = result.is_err();
++            let reply = match result {
++                Ok(page) => json!({"ok":true,"status":page.status.as_u16(),"html":page.html,"request_count":session.request_count()}),
++                Err(error) => json!({"ok":false,"error":failure(&error),"request_count":session.request_count()}),
++            };
++            writeln!(output, "{reply}")?;
++            output.flush()?;
++            if failed { break; }
++        }
++        anyhow::Ok(())
++    });
++    rt.shutdown_timeout(Duration::from_secs(5));
++    outcome
++}
+diff --git a/examples/solver_smoke.rs b/examples/solver_smoke.rs
+index c8839f8..3825277 100644
+--- a/examples/solver_smoke.rs
++++ b/examples/solver_smoke.rs
+@@ -38,7 +38,7 @@ async fn main() -> Result<()> {
+     let under_attack: Url = UNDER_ATTACK.parse()?;
+ 
+     // The managed page's HTML and sitekey, loaded as the profile's browser.
+-    let client = Transport::read(Path::new(PROFILE))?.client(None)?;
++    let client = Transport::read(Path::new(PROFILE))?.client(None, None)?;
+     let html = cfsolve::http::navigate(&client, &managed).await?.html;
+     let sitekey = html
+         .split("data-sitekey=\"")
+@@ -171,7 +171,7 @@ async fn main() -> Result<()> {
+ 
+ /// Loads `url` the way a caller of `clear_fetched` would: as the profile's browser.
+ async fn fetch(url: &Url) -> Result<FetchedPage> {
+-    let client = Transport::read(Path::new(PROFILE))?.client(None)?;
++    let client = Transport::read(Path::new(PROFILE))?.client(None, None)?;
+     let document = cfsolve::http::navigate(&client, url).await?;
+     let set_cookies = client
+         .cookies(&document.url)
+diff --git a/examples/tls_echo.rs b/examples/tls_echo.rs
+index 29dd797..f5d2720 100644
+--- a/examples/tls_echo.rs
++++ b/examples/tls_echo.rs
+@@ -18,7 +18,7 @@ async fn main() -> Result<()> {
+     let url = args
+         .next()
+         .unwrap_or_else(|| "https://tls.peet.ws/api/all".to_owned());
+-    let browser = Transport::read(Path::new(&path))?.client(None)?;
++    let browser = Transport::read(Path::new(&path))?.client(None, None)?;
+     // Opened the way the solver opens an embedding page.
+     let document = navigate(&browser, &Url::parse(&url)?).await?;
+     print!("{}", document.html);
+diff --git a/src/bin/capture-proxy/main.rs b/src/bin/capture-proxy/main.rs
+index 90cff09..8575fb3 100644
+--- a/src/bin/capture-proxy/main.rs
++++ b/src/bin/capture-proxy/main.rs
+@@ -49,7 +49,7 @@ fn main() -> Result<()> {
+     let runtime = Builder::new_multi_thread().enable_all().build()?;
+     let result = runtime.block_on(async {
+         // Use the same upstream proxy for forwarded requests and tunnels.
+-        let client = transport.client(arguments.upstream_proxy.as_deref())?;
++        let client = transport.client(arguments.upstream_proxy.as_deref(), None)?;
+         CaptureProxy::try_new(config, client, ca)?.run().await
+     });
+     // Exit without waiting for an extraction still in progress.
+diff --git a/src/capture/proxy/tests.rs b/src/capture/proxy/tests.rs
+index 6f9b78c..6a6fe80 100644
+--- a/src/capture/proxy/tests.rs
++++ b/src/capture/proxy/tests.rs
+@@ -46,7 +46,7 @@ impl Loopback {
+     async fn start(mitm_hosts: Vec<String>) -> Self {
+         let profile = Path::new("profiles/safari-26-ios.json");
+         let transport = Transport::read(profile).unwrap();
+-        let client = transport.client(None).unwrap();
++        let client = transport.client(None, None).unwrap();
+         let config = Config {
+             listen: "127.0.0.1:0".parse().unwrap(),
+             mitm_hosts,
+diff --git a/src/fingerprint.rs b/src/fingerprint.rs
+index 5719488..27d572b 100644
+--- a/src/fingerprint.rs
++++ b/src/fingerprint.rs
+@@ -79,7 +79,7 @@ impl Transport {
+     }
+ 
+     /// Creates a client with this transport, optionally using `proxy`.
+-    pub fn client(&self, proxy: Option<&str>) -> Result<BrowserClient> {
++    pub fn client(&self, proxy: Option<&str>, gate: Option<wreq::NetworkGate>) -> Result<BrowserClient> {
+         BrowserClient::try_new(
+             self.profile,
+             self.platform,
+@@ -88,6 +88,7 @@ impl Transport {
+             self.requests.clone(),
+             self.engine,
+             proxy,
++            gate,
+         )
+     }
+ }
+diff --git a/src/http/client.rs b/src/http/client.rs
+index 2c6545f..47cee6c 100644
+--- a/src/http/client.rs
++++ b/src/http/client.rs
+@@ -73,6 +73,7 @@ impl BrowserClient {
+         requests: Requests,
+         engine: Engine,
+         proxy: Option<&str>,
++        gate: Option<wreq::NetworkGate>,
+     ) -> Result<Self> {
+         use wreq::IntoEmulation;
+ 
+@@ -109,6 +110,8 @@ impl BrowserClient {
+             .default_headers(headers)
+             .cookie_provider(Arc::clone(&jar))
+             .redirect(Policy::limited(5))
++            .network_gate(gate)
++            .retry(wreq::retry::Policy::never())
+             .timeout(Duration::from_secs(30));
+         if let Some(proxy) = proxy {
+             builder = builder.proxy(Proxy::all(proxy)?);
+diff --git a/src/lib.rs b/src/lib.rs
+index 6545568..5ebe5de 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -45,6 +45,7 @@ mod error;
+ mod listing;
+ mod performance_clock;
+ mod random_id;
++pub mod refresh;
+ mod resource_timing;
+ mod session;
+ mod solver;
+diff --git a/src/refresh.rs b/src/refresh.rs
+new file mode 100644
+index 0000000..db8b9eb
+--- /dev/null
++++ b/src/refresh.rs
+@@ -0,0 +1,69 @@
++//! Persistent, bounded schedule session. A clearance is attempted only on the initial GET.
++use std::time::Duration;
++use anyhow::{Result, bail, ensure};
++use url::Url;
++use crate::{Browser, Options, PageDocument};
++use crate::http::{self, BrowserClient};
++use crate::session::{self, Discard, Expect, Outcome};
++use wreq::{NetworkGate, StatusCode};
++
++/// One capture's persistent client, cookie jar, request budget, and clearance state.
++pub struct RefreshSession<'a> {
++    browser: &'a Browser,
++    options: &'a Options,
++    client: BrowserClient,
++    gate: NetworkGate,
++    previous: Option<Url>,
++    clearance_attempted: bool,
++}
++
++impl Browser {
++    /// Reuse the exact client, fingerprint, cookies, egress and pacing for an entire capture.
++    pub fn refresh_session<'a>(&'a self, options: &'a Options, interval: Duration,
++                              request_limit: u64, hosts: Vec<String>) -> Result<RefreshSession<'a>> {
++        let gate = NetworkGate::new(interval, request_limit, hosts)?;
++        let client = self.transport.client(options.proxy.as_deref(), Some(gate.clone()))?;
++        Ok(RefreshSession { browser: self, options, client, gate, previous: None, clearance_attempted: false })
++    }
++}
++
++impl RefreshSession<'_> {
++    /// Count all admitted requests, including challenge traffic and redirects.
++    pub fn request_count(&self) -> u64 { self.gate.count() }
++
++    /// Navigate or submit a form; only the first GET may attempt challenge clearance.
++    /// Any subsequent challenge or non-success response returns an error without replay.
++    pub async fn request(&mut self, method: &str, url: &Url,
++                         fields: &[(String, String)]) -> Result<PageDocument> {
++        let initial = self.previous.is_none();
++        let document = match method {
++            "GET" => {
++                let (document, navigation) = session::navigate(&self.client, url).await.map_err(crate::Error::classify)?;
++                if document.status == StatusCode::FORBIDDEN {
++                    ensure!(initial && !self.clearance_attempted,
++                            "Session challenged again; capture aborted without replaying a request");
++                    self.clearance_attempted = true;
++                    let sink = self.options.sink.as_deref().unwrap_or(&Discard);
++                    match session::native(&self.client, sink, document, navigation,
++                                          &self.browser.page, Expect::ChallengePage,
++                                          &self.browser.solve).await.map_err(crate::Error::classify)? {
++                        Outcome::Cleared(clearance) => clearance.page,
++                        Outcome::Token(_) => bail!("Expected challenge clearance, not a widget token"),
++                    }
++                } else { document }
++            }
++            "POST" => {
++                let previous = self.previous.as_ref().ok_or_else(|| anyhow::anyhow!("Open the schedule before submitting a form"))?;
++                http::submit_form(&self.client, previous, url, fields).await.map_err(crate::Error::classify)?
++            }
++            _ => bail!("Only GET and POST are supported"),
++        };
++        ensure!(document.status.is_success(), "Schedule returned HTTP {}", document.status);
++        ensure!(document.html.len() <= 4 * 1024 * 1024, "Schedule response exceeds 4 MiB");
++        self.previous = Some(document.url.clone());
++        Ok(document)
++    }
++}
++
++#[cfg(test)]
++mod tests;
+diff --git a/src/refresh/tests.rs b/src/refresh/tests.rs
+new file mode 100644
+index 0000000..c8b9eae
+--- /dev/null
++++ b/src/refresh/tests.rs
+@@ -0,0 +1,105 @@
++use super::*;
++use std::{io::{BufRead, BufReader, Read, Write}, net::TcpListener, thread, time::Instant};
++
++struct Received { head: String, body: String }
++
++// The origin observes real requests, including the ones followed internally by wreq.
++fn serve(responses: Vec<String>) -> (Url, thread::JoinHandle<Vec<Received>>) {
++    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
++    let url = Url::parse(&format!("http://{}/", listener.local_addr().unwrap())).unwrap();
++    let task = thread::spawn(move || {
++        responses.into_iter().map(|response| {
++            let (mut stream, _) = listener.accept().unwrap();
++            stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
++            let mut reader = BufReader::new(&mut stream);
++            let mut head = String::new();
++            while !head.ends_with("\r\n\r\n") {
++                assert_ne!(reader.read_line(&mut head).unwrap(), 0);
++            }
++            let length = head.lines().filter_map(|line| line.split_once(':'))
++                .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
++                .map_or(0, |(_, value)| value.trim().parse::<usize>().unwrap());
++            let mut body = vec![0; length];
++            reader.read_exact(&mut body).unwrap();
++            stream.write_all(response.as_bytes()).unwrap();
++            Received { head, body: String::from_utf8(body).unwrap() }
++        }).collect()
++    });
++    (url, task)
++}
++
++fn response(status: &str, headers: &str, body: &str) -> String {
++    format!("HTTP/1.1 {status}\r\n{headers}Content-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len())
++}
++
++fn browser() -> Browser { Browser::read("profiles/safari-26-ios.json").unwrap() }
++
++#[tokio::test]
++async fn redirects_and_form_posts_share_cookies_pacing_and_one_budget() {
++    let (url, origin) = serve(vec![
++        response("302 Found", "Location: /start\r\nSet-Cookie: session=fixture; Path=/\r\n", ""),
++        response("200 OK", "", "schedule form"),
++        response("200 OK", "", "filtered sections"),
++    ]);
++    let browser = browser();
++    let options = Options::default();
++    let mut session = browser.refresh_session(&options, Duration::from_millis(100), 3,
++        vec!["127.0.0.1".into()]).unwrap();
++    let started = Instant::now();
++    assert_eq!(session.request("GET", &url, &[]).await.unwrap().html, "schedule form");
++    assert_eq!(session.request("POST", &url.join("filter").unwrap(),
++        &[("SEM_filt".into(), "227".into())]).await.unwrap().html, "filtered sections");
++    assert!(started.elapsed() >= Duration::from_millis(200));
++    let error = session.request("GET", &url.join("extra").unwrap(), &[]).await.unwrap_err();
++    assert!(error.chain().filter_map(|e| e.downcast_ref::<std::io::Error>())
++        .any(|e| e.kind() == std::io::ErrorKind::Other));
++    assert_eq!(session.request_count(), 3);
++    let requests = origin.join().unwrap();
++    assert!(requests[1].head.starts_with("GET /start HTTP/1.1"));
++    assert!(requests[1].head.to_ascii_lowercase().contains("cookie: session=fixture"));
++    assert!(requests[2].head.starts_with("POST /filter HTTP/1.1"));
++    assert!(requests[2].head.to_ascii_lowercase().contains("cookie: session=fixture"));
++    assert_eq!(requests[2].body, "SEM_filt=227");
++}
++
++#[tokio::test]
++async fn a_redirect_cannot_escape_the_origin_allowlist() {
++    let (url, origin) = serve(vec![response("302 Found", "Location: https://outside.invalid/\r\n", "")]);
++    let browser = browser();
++    let options = Options::default();
++    let mut session = browser.refresh_session(&options, Duration::from_millis(100), 3,
++        vec!["127.0.0.1".into()]).unwrap();
++    let error = session.request("GET", &url, &[]).await.unwrap_err();
++    assert!(error.chain().filter_map(|e| e.downcast_ref::<std::io::Error>())
++        .any(|e| e.kind() == std::io::ErrorKind::PermissionDenied));
++    assert_eq!(session.request_count(), 1);
++    assert_eq!(origin.join().unwrap()[0].head.lines().next().unwrap(), "GET / HTTP/1.1");
++}
++
++#[tokio::test]
++async fn a_forbidden_page_after_initial_navigation_is_not_solved_or_replayed() {
++    let (url, origin) = serve(vec![response("200 OK", "", "schedule form"), response("403 Forbidden", "", "denied")]);
++    let browser = browser();
++    let options = Options::default();
++    let mut session = browser.refresh_session(&options, Duration::from_millis(100), 5,
++        vec!["127.0.0.1".into()]).unwrap();
++    session.request("GET", &url, &[]).await.unwrap();
++    session.request("GET", &url, &[]).await.unwrap_err();
++    assert_eq!(session.request_count(), 2);
++    assert!(!session.clearance_attempted);
++    assert!(origin.join().unwrap().iter().all(|request| request.head.starts_with("GET / HTTP/1.1")));
++}
++
++#[tokio::test]
++async fn a_hard_forbidden_page_is_reported_without_solving_or_retrying() {
++    let (url, origin) = serve(vec![response("403 Forbidden", "", "denied")]);
++    let browser = browser();
++    let options = Options::default();
++    let mut session = browser.refresh_session(&options, Duration::from_millis(100), 5,
++        vec!["127.0.0.1".into()]).unwrap();
++    let error = session.request("GET", &url, &[]).await.unwrap_err();
++    assert!(matches!(error.downcast_ref::<crate::Error>(),
++        Some(crate::Error::Blocked { status }) if *status == StatusCode::FORBIDDEN));
++    assert_eq!(session.request_count(), 1);
++    assert_eq!(origin.join().unwrap()[0].head.lines().next().unwrap(), "GET / HTTP/1.1");
++}
+diff --git a/src/solver.rs b/src/solver.rs
+index b4a5e48..34edbdc 100644
+--- a/src/solver.rs
++++ b/src/solver.rs
+@@ -203,7 +203,7 @@ impl Browser {
+ 
+     fn client(&self, options: &Options) -> Result<BrowserClient, Error> {
+         self.transport
+-            .client(options.proxy.as_deref())
++            .client(options.proxy.as_deref(), None)
+             .map_err(Error::Config)
+     }
+ }
+diff --git a/vendor/wreq/Cargo.toml b/vendor/wreq/Cargo.toml
+index 780eb28..c5e951b 100644
+--- a/vendor/wreq/Cargo.toml
++++ b/vendor/wreq/Cargo.toml
+@@ -228,6 +228,7 @@ optional = true
+ 
+ [dependencies.tokio]
+ version = "1.52.3"
++features = ["sync", "time"]
+ default-features = false
+ 
+ [dependencies.tokio-btls]
+diff --git a/vendor/wreq/src/client.rs b/vendor/wreq/src/client.rs
+index 214fe42..50ada8d 100644
+--- a/vendor/wreq/src/client.rs
++++ b/vendor/wreq/src/client.rs
+@@ -199,6 +199,7 @@ struct Config {
+     auto_sys_proxy: bool,
+     retry_policy: retry::Policy,
+     redirect_policy: redirect::Policy,
++    network_gate: Option<crate::NetworkGate>,
+     referer: bool,
+     timeout_options: TimeoutOptions,
+     #[cfg(feature = "cookies")]
+@@ -286,6 +287,7 @@ impl Client {
+                 auto_sys_proxy: true,
+                 retry_policy: retry::Policy::default(),
+                 redirect_policy: redirect::Policy::none(),
++                network_gate: None,
+                 referer: true,
+                 timeout_options: TimeoutOptions::default(),
+                 #[cfg(feature = "hickory-dns")]
+@@ -575,6 +577,7 @@ impl ClientBuilder {
+ 
+             builder
+                 .http1_options(config.http1_options)
++                .network_gate(config.network_gate)
+                 .http2_options(config.http2_options)
+                 .http2_only(matches!(config.http_version_pref, HttpVersionPref::Http2))
+                 .http2_timer(config.timer.clone())
+@@ -984,6 +987,12 @@ impl ClientBuilder {
+         self
+     }
+ 
++    /// Bound all outgoing requests, including redirected and retried requests.
++    pub fn network_gate(mut self, gate: Option<crate::NetworkGate>) -> ClientBuilder {
++        self.config.network_gate = gate;
++        self
++    }
++
+     // Proxy options
+ 
+     /// Add a `Proxy` to the list of proxies the `Client` will use.
+diff --git a/vendor/wreq/src/client/layer/client.rs b/vendor/wreq/src/client/layer/client.rs
+index 8b00048..1457e5d 100644
+--- a/vendor/wreq/src/client/layer/client.rs
++++ b/vendor/wreq/src/client/layer/client.rs
+@@ -57,6 +57,7 @@ use crate::{
+ #[must_use]
+ pub(crate) struct HttpClient<C, B> {
+     config: Config,
++    network_gate: Option<crate::NetworkGate>,
+     connector: C,
+     exec: Executor,
+     h1_builder: conn::http1::Builder,
+@@ -196,7 +197,13 @@ where
+             ConnectionDescriptor::new(uri, group, proxy, version, tls_options, socket_bind_options)
+         };
+ 
+-        Box::pin(this.send_request(req, descriptor).map_err(Into::into))
++        Box::pin(async move {
++            // Already below redirects and retries; reuse this request's existing future allocation.
++            if let Some(gate) = &this.network_gate {
++                gate.acquire(req.uri()).await?;
++            }
++            this.send_request(req, descriptor).await.map_err(Into::into)
++        })
+     }
+ 
+     async fn send_request(
+@@ -690,6 +697,7 @@ impl<C: Clone, B> Clone for HttpClient<C, B> {
+     fn clone(&self) -> HttpClient<C, B> {
+         HttpClient {
+             config: self.config,
++            network_gate: self.network_gate.clone(),
+             exec: self.exec.clone(),
+             h1_builder: self.h1_builder.clone(),
+             h2_builder: self.h2_builder.clone(),
+@@ -807,6 +815,7 @@ where
+ #[derive(Clone)]
+ pub struct Builder {
+     config: Config,
++    network_gate: Option<crate::NetworkGate>,
+     exec: Executor,
+     h1_builder: conn::http1::Builder,
+     h2_builder: conn::http2::Builder<Executor>,
+@@ -827,6 +836,7 @@ impl Builder {
+                 set_host: true,
+                 ver: Ver::Auto,
+             },
++            network_gate: None,
+             exec: exec.clone(),
+             h1_builder: conn::http1::Builder::default(),
+             h2_builder: conn::http2::Builder::new(exec),
+@@ -841,6 +851,12 @@ impl Builder {
+         }
+     }
+ 
++    pub fn network_gate(mut self, gate: Option<crate::NetworkGate>) -> Self {
++        self.config.retry_canceled_requests = gate.is_none();
++        self.network_gate = gate;
++        self
++    }
++
+     /// Set an optional timeout for idle sockets being kept-alive.
+     /// A `Timer` is required for this to take effect. See `Builder::pool_timer`
+     ///
+@@ -956,6 +972,7 @@ impl Builder {
+         let timer = self.pool_timer.clone();
+         HttpClient {
+             config: self.config,
++            network_gate: self.network_gate,
+             exec: exec.clone(),
+             connector,
+             h1_builder: self.h1_builder,
+diff --git a/vendor/wreq/src/lib.rs b/vendor/wreq/src/lib.rs
+index e96b389..1b738f8 100644
+--- a/vendor/wreq/src/lib.rs
++++ b/vendor/wreq/src/lib.rs
+@@ -308,6 +308,8 @@ mod conn;
+ mod error;
+ mod group;
+ mod into_uri;
++mod network_gate;
++pub use network_gate::NetworkGate;
+ mod proxy;
+ mod rt;
+ mod sync;
+diff --git a/vendor/wreq/src/network_gate.rs b/vendor/wreq/src/network_gate.rs
+new file mode 100644
+index 0000000..8187bb3
+--- /dev/null
++++ b/vendor/wreq/src/network_gate.rs
+@@ -0,0 +1,49 @@
++//! Shared outbound pacing and request budget, applied beneath retries and redirects.
++use std::{io, sync::{Arc, atomic::{AtomicU64, Ordering}}, time::Duration};
++use http::Uri;
++use tokio::{sync::Mutex, time::{Instant, sleep_until}};
++use tower::BoxError;
++
++/// A shared admission gate for every outbound request, including redirects.
++#[derive(Clone)]
++pub struct NetworkGate(Arc<State>);
++
++struct State {
++    interval: Duration,
++    next: Mutex<Instant>,
++    count: AtomicU64,
++    limit: u64,
++    hosts: Vec<String>,
++}
++
++impl NetworkGate {
++    /// Create a gate with a 100 msâ€“10 s interval, a 1â€“1000 request budget, and allowed hosts.
++    /// HTTPS and WSS are permitted; HTTP is permitted only for explicitly allowed loopback tests.
++    pub fn new(interval: Duration, limit: u64, hosts: Vec<String>) -> io::Result<Self> {
++        if !(Duration::from_millis(100)..=Duration::from_secs(10)).contains(&interval)
++            || limit == 0 || limit > 1000 || hosts.is_empty() {
++            return Err(io::Error::new(io::ErrorKind::InvalidInput, "Invalid network pacing or budget"));
++        }
++        Ok(Self(Arc::new(State { interval, next: Mutex::new(Instant::now()), count: AtomicU64::new(0), limit, hosts })))
++    }
++
++    /// Number of requests admitted across all clients sharing this gate.
++    pub fn count(&self) -> u64 { self.0.count.load(Ordering::Relaxed) }
++
++    pub(crate) async fn acquire(&self, uri: &Uri) -> Result<(), BoxError> {
++        let host = uri.host().unwrap_or("");
++        let local = host == "127.0.0.1" || host == "localhost";
++        if !self.0.hosts.iter().any(|allowed| allowed == host)
++            || !(matches!(uri.scheme_str(), Some("https" | "wss")) || (local && uri.scheme_str() == Some("http"))) {
++            return Err(io::Error::new(io::ErrorKind::PermissionDenied, "Outbound target is outside the refresh allowlist").into());
++        }
++        let mut next = self.0.next.lock().await;
++        if self.count() >= self.0.limit {
++            return Err(io::Error::other("Refresh outbound request budget exhausted").into());
++        }
++        sleep_until(*next).await;
++        self.0.count.fetch_add(1, Ordering::Relaxed);
++        *next = Instant::now() + self.0.interval;
++        Ok(())
++    }
++}

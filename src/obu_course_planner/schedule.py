@@ -6,7 +6,7 @@ from typing import Any
 
 from bs4 import BeautifulSoup
 
-from .browser_transport import BrowserSession
+from .cfsolve_transport import CfsolveSession
 
 SOURCE_URL = "https://info.obu.edu/info/p3/CLASSSCHED.php"
 FRAME_URL = SOURCE_URL + "?fromfile=PublicFrame&pubiframe=Y"
@@ -124,9 +124,9 @@ def next_page(soup: BeautifulSoup) -> int | None:
 
 
 class ScheduleClient:
-    """Read listing pages in one persistent, network-paced browser session."""
+    """Read listing pages in one persistent, network-paced native session."""
 
-    def __init__(self, client: BrowserSession) -> None:
+    def __init__(self, client: CfsolveSession) -> None:
         self._client = client
         self.requests = 0
 

@@ -1,56 +1,50 @@
 # syntax=docker/dockerfile:1
-# Refresh-only image: Python 3.13 plus the pinned Node browser driver.
-#
-# The request-serving API image (Dockerfile) ships neither Node nor any browser packages; only this
-# disposable refresher needs them. It installs the exact versions in browser/package-lock.json and
-# the Playwright 1.57 headless-shell Chromium they drive, then drops to an unprivileged user.
-# Build:  docker build -f Dockerfile.refresh -t obu-course-planner-refresh:local .
-# Run:    see deploy/refresh_schedule.py (readonly root, no caps, /data/schedule mounted).
+# Refresh-only native solver. The API image contains no solver, Rust, Node or browser.
+# Native source includes upstream PR #2's Windows fixes; production runs Linux ARM64.
+# Build with bounded resources; see README.md. Runtime limits live in deploy/refresh_schedule.py.
+FROM rust:1.98.0-bookworm@sha256:56bfc6a715db852bdafd5e4bdf68ef7abceb791e77c47e5d87c7e861702a9ca6 AS solver
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    cmake clang libclang-dev pkg-config ca-certificates patch \
+    && rm -rf /var/lib/apt/lists/*
+ADD --checksum=sha256:2306ffa6e08d6618d115d7fab5688c5ec2bc6c537dd7d972ab70035c3f253c0a \
+    https://codeload.github.com/chris124567/cfsolve/tar.gz/d8108f0e7950c8b98f582fb811f95d1f82386218 /tmp/cfsolve.tar.gz
+WORKDIR /work
+RUN tar -xzf /tmp/cfsolve.tar.gz --strip-components=1 -C /work && rm /tmp/cfsolve.tar.gz
+COPY deploy/cfsolve.patch /tmp/cfsolve.patch
+RUN patch -p1 < /tmp/cfsolve.patch
+ENV CARGO_BUILD_JOBS=2
+RUN --mount=type=cache,id=obu-cfsolve-registry,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=obu-cfsolve-target,target=/work/target,sharing=locked \
+    cargo build --locked --release --no-default-features --example obu_refresh \
+    && install -m 0755 target/release/examples/obu_refresh /usr/local/bin/obu-cfsolve
 
-FROM node:24-bookworm-slim AS node
 FROM ghcr.io/astral-sh/uv:0.10.2 AS uv
-
-FROM python:3.13-slim-trixie AS build
+FROM python:3.13-slim-trixie AS python-build
 COPY --from=uv /uv /usr/local/bin/uv
-# Node's Bookworm binary also runs on Trixie's newer glibc (the proven browser runtime).
-COPY --from=node /usr/local/bin/node /usr/local/bin/node
-COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
-ENV UV_LINK_MODE=copy \
-    UV_PYTHON_DOWNLOADS=never
+ENV UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
 WORKDIR /app
 COPY pyproject.toml uv.lock LICENSE ./
 COPY src ./src
-# --no-editable bakes the wheel (including the packaged Node helper src/obu_course_planner/browser/)
-# into .venv. No frontend build: this image never serves requests.
 RUN uv sync --frozen --no-dev --no-editable
-# Exact, locked browser driver dependencies.
-COPY browser/package.json browser/package-lock.json /app/browser/
-RUN node /usr/local/lib/node_modules/npm/bin/npm-cli.js ci --prefix /app/browser --no-audit --no-fund
 
 FROM python:3.13-slim-trixie
-COPY --from=node /usr/local/bin/node /usr/local/bin/node
-COPY --from=build /app/.venv /app/.venv
-COPY --from=build /app/browser /app/browser
-
-# --with-deps pulls the Chromium OS libraries (root, build time only). The Playwright 1.57
-# headless shell is the exact binary the capture was proven against.
-ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
-RUN node /app/browser/node_modules/playwright-core/cli.js install --with-deps --only-shell chromium \
-    && ln -sf /opt/ms-playwright/chromium_headless_shell-*/chrome-linux/headless_shell /usr/local/bin/obu-chromium \
-    && chmod -R a+rX /opt/ms-playwright \
-    && rm -rf /var/lib/apt/lists/*
-
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PATH="/app/.venv/bin:$PATH" \
-    NODE_PATH=/app/browser/node_modules \
-    OBU_BROWSER_EXECUTABLE=/usr/local/bin/obu-chromium \
-    HOME=/tmp
-WORKDIR /app
-RUN groupadd --gid 10001 app \
+# A versioned tag plus this label protects the independently built worker from Coolify cleanup.
+LABEL coolify.managed="true" \
+    org.opencontainers.image.source="https://github.com/kickofline/obu-course-planner" \
+    io.obu.cfsolve.revision="d8108f0e7950c8b98f582fb811f95d1f82386218"
+RUN apt-get update && apt-get install -y --no-install-recommends libstdc++6 ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 app \
     && useradd --uid 10002 --gid app --no-create-home refresh
-
-# Runs as 10002:10001 with a read-only root; the runner supplies /data/schedule and a /tmp tmpfs.
+COPY --from=python-build /app/.venv /app/.venv
+COPY --from=solver /usr/local/bin/obu-cfsolve /usr/local/bin/obu-cfsolve
+COPY --from=solver /work/profiles /opt/cfsolve/profiles
+COPY --from=solver /work/LICENSE /opt/cfsolve/licenses/cfsolve/LICENSE
+COPY --from=solver /work/vendor/wreq/LICENSE /opt/cfsolve/licenses/wreq/LICENSE
+COPY --from=solver /work/vendor/http2/LICENSE /opt/cfsolve/licenses/http2/LICENSE
+COPY --from=solver /work/vendor/btls-sys/LICENSE-MIT /opt/cfsolve/licenses/btls-sys/LICENSE-MIT
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PATH="/app/.venv/bin:$PATH" HOME=/tmp
+WORKDIR /app
 USER 10002:10001
 ENTRYPOINT ["python", "-m", "obu_course_planner.refresh"]
 CMD ["--output", "/data/schedule/schedule-snapshot.json", "--delay", "1"]

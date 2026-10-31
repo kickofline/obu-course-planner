@@ -16,7 +16,6 @@ src/obu_course_planner/static/
 frontend/node_modules/
 frontend/.astro/
 frontend/dist/
-# Refresher browser driver manifests; node_modules is installed inside Dockerfile.refresh.
-!browser/
-!browser/**
-browser/node_modules/
+# Pinned native refresher integration; no browser dependency tree.
+!deploy/
+!deploy/cfsolve.patch

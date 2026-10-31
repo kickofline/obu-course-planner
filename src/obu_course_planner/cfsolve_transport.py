@@ -1,9 +1,10 @@
-"""Bounded JSONL connection to the refresh-only, paced stealth browser."""
+"""Bounded JSONL connection to the refresh-only, paced native solver."""
 from __future__ import annotations
 
 from contextlib import suppress
 import json
-from pathlib import Path
+from math import ceil
+import os
 from queue import Empty, Queue
 import subprocess
 from threading import Thread
@@ -11,21 +12,24 @@ from typing import Any
 from urllib.parse import urlencode
 
 
-class BrowserSession:
-    """One browser/cookie session; the Node transport paces every network request."""
+class CfsolveSession:
+    """One native client, cookie jar and fingerprint for an entire paced capture."""
 
     def __init__(self, delay: float = 1.0) -> None:
         if not 0.1 <= delay <= 10:
-            raise ValueError("Browser request interval must be between 0.1 and 10 seconds")
-        helper = Path(__file__).with_name("browser") / "transport.cjs"
+            raise ValueError("Request interval must be between 0.1 and 10 seconds")
+        command = [os.environ.get("OBU_CFSOLVE_EXECUTABLE", "obu-cfsolve"),
+                   "--interval-ms", str(ceil(delay * 1000))]
+        if profile := os.environ.get("OBU_CFSOLVE_PROFILE"):
+            command.extend(["--profile", profile])
         try:
             self._process = subprocess.Popen(
-                ["node", str(helper), "--interval-ms", str(delay * 1000)],
+                command,
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                 text=True, encoding="utf-8", bufsize=1,
             )
         except OSError as exc:
-            raise RuntimeError("Cannot start refresh browser transport; install Node and browser dependencies.") from exc
+            raise RuntimeError("Cannot start native refresh transport; use Dockerfile.refresh or set OBU_CFSOLVE_EXECUTABLE.") from exc
         self.requests = 0
         self._responses: Queue[str | None] = Queue()
         self._reader = Thread(target=self._read_responses, daemon=True)
@@ -45,22 +49,22 @@ class BrowserSession:
             line = self._responses.get(timeout=timeout)
         except (BrokenPipeError, OSError, Empty) as exc:
             self._stop()
-            raise RuntimeError("Refresh browser transport stopped or timed out; snapshot not replaced.") from exc
+            raise RuntimeError("Native refresh transport stopped or timed out; snapshot not replaced.") from exc
         if line is None:
-            raise RuntimeError("Refresh browser transport exited without a response; snapshot not replaced.")
+            raise RuntimeError("Native refresh transport exited without a response; snapshot not replaced.")
         try:
             result = json.loads(line)
             if not isinstance(result, dict) or not isinstance(result.get("ok"), bool):
                 raise ValueError("missing result")
             if not result["ok"]:
-                raise RuntimeError(f"OBU browser request failed: {result.get('error', 'unknown browser error')}")
+                raise RuntimeError(f"OBU request failed: {result.get('error', 'native transport error')}")
             count = result["request_count"]
             if not isinstance(count, int) or count < self.requests:
                 raise ValueError("invalid request counter")
             self.requests = count
             return result
         except (ValueError, KeyError) as exc:
-            raise RuntimeError("Invalid refresh browser response; snapshot not replaced.") from exc
+            raise RuntimeError("Invalid native refresh response; snapshot not replaced.") from exc
 
     def request(self, method: str, url: str, *, params: dict | None = None, data: dict | None = None) -> str:
         if params:
@@ -70,7 +74,7 @@ class BrowserSession:
             command["data"] = data
         result = self._exchange(command)
         if not isinstance(result.get("html"), str):
-            raise RuntimeError("Refresh browser returned no HTML; snapshot not replaced.")
+            raise RuntimeError("Native refresh returned no HTML; snapshot not replaced.")
         return result["html"]
 
     def _stop(self) -> None:
@@ -94,13 +98,13 @@ class BrowserSession:
             self._reader.join(timeout=1)
             self._process.stdout.close()
 
-    def __enter__(self) -> BrowserSession:
+    def __enter__(self) -> CfsolveSession:
         return self
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:
         if exc_type is None:
             self.close()
         else:
-            # Preserve the capture error even if closing the failed browser also fails.
+            # Preserve the capture error even if closing the failed transport also fails.
             with suppress(Exception):
                 self.close()

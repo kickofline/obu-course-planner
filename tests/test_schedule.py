@@ -42,8 +42,8 @@ def page(fields=None, rows="", count=0, next_number=2, heading="Patterson School
     )
 
 
-class FakeBrowser:
-    """In-memory upstream for parser/capture tests; network pacing is tested in Node."""
+class FakeSession:
+    """In-memory upstream for parser/capture tests; native HTTP pacing has Rust tests."""
 
     def __init__(self, handler):
         self._http = httpx.Client(transport=httpx.MockTransport(handler))
@@ -64,7 +64,7 @@ class FakeBrowser:
 
 
 def client_for(handler):
-    return mod.ScheduleClient(FakeBrowser(handler))
+    return mod.ScheduleClient(FakeSession(handler))
 
 
 def test_school_heading_and_derived_hours_carry_across_pages():

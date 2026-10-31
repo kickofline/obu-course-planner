@@ -108,10 +108,13 @@ only for a link of the form `https://<host>/courses/#plan=<token>`.
 uv run pytest
 
 cd frontend && npm test   # node --test: share-link round trips, saved-schedule revalidation
-
-# Refresh browser pacing (no upstream traffic)
-cd ../browser && npm ci && npm test
 ```
+
+Native transport regressions are included in `deploy/cfsolve.patch`. In the pinned upstream checkout
+with that patch applied (see `Dockerfile.refresh`), run
+`cargo test --locked --release --no-default-features --lib refresh::tests`.
+These use local HTTP fixtures to check cookies, form posts, redirect pacing, the shared request
+budget, origin restrictions, and failure without replay; they make no OBU requests.
 
 ## Deployment
 
@@ -120,30 +123,36 @@ and the wheel-bundled site and never runs a browser. The healthcheck hits `/heal
 
 ### Schedule refresh
 
-Snapshot refreshes use a separate image (`Dockerfile.refresh`), because the capture drives a headless
-browser. CSS, images, fonts, and media are blocked before reaching the network. HTML, JavaScript,
-fetch/XHR, and frame documents remain enabled for verification and form behavior. A Node helper
-(`browser/`) paces every remaining outbound HTTP(S) request — including redirects — with a configurable
-interval (one second by default); no browser ever runs on the request-serving path. The transport is a stealth-patched
-headless browser against an upstream that blocks plain HTTP clients: there is no CAPTCHA solving,
-no IP rotation, and no retry loop. A capture that fails or returns an incomplete listing is discarded,
-and the last complete snapshot stays in place.
+Snapshot refreshes use a separate image (`Dockerfile.refresh`): Python plus a native
+[cfsolve](https://github.com/chris124567/cfsolve) helper, not a headless browser. Upstream source is
+pinned to `d8108f0e7950c8b98f582fb811f95d1f82386218` (including PR #2's Windows fixes), downloaded
+with a SHA-256 check, and extended by `deploy/cfsolve.patch`. Production is Linux ARM64;
+including the Windows fixes is not a claim that the native Windows helper has been runtime-tested.
 
-Stealth does not guarantee upstream access: Cloudflare may still return HTTP 403. Check the refresh
-service journal and the snapshot's capture timestamp before treating cached offerings as current;
-passing the local browser regression does not establish upstream availability.
+One client preserves its cookie jar, Safari fingerprint, and egress for the entire capture.
+Only the initial GET may attempt Cloudflare clearance. A hard block, unsupported challenge,
+re-challenge, incomplete listing, or transport failure aborts the capture and preserves the last
+complete snapshot. There is no IP rotation or retry loop, and no clearance cookie is transferred
+to a different client. Tokens, cookies, challenge payloads, and raw upstream error chains are not logged.
+
+The shared limiter is inside the HTTP client, below redirects and challenge requests: one outbound
+request per second by default, with a 400-request budget per capture. Only the schedule and Cloudflare
+challenge origins are allowed. The request-serving API image contains no native solver or browser.
+Upstream changes can still break refreshes; check the refresh status and snapshot timestamp rather
+than treating local tests or an old successful capture as a guarantee of current access.
 
 ```sh
-# Build the refresher (Node 24 + pinned Playwright headless shell baked in)
-docker build -f Dockerfile.refresh -t obu-course-planner-refresh:local .
+# Resource-bounded native build (Rust is confined to the build stage)
+docker buildx build --resource memory=4g --resource cpu-quota=100000 --load \
+  -f Dockerfile.refresh -t obu-course-planner-refresh:cfsolve-d8108f0 .
 
 # Host config, /etc/obu-course-planner/refresh.env:
-#   OBU_PLANNER_REFRESH_IMAGE=obu-course-planner-refresh:local
+#   OBU_PLANNER_REFRESH_IMAGE=sha256:<built image ID>
 #   OBU_PLANNER_VOLUME=<volume holding schedule-snapshot.json>
 ```
 
 `deploy/refresh_schedule.py` runs that image as a disposable, read-only, cap-dropped container
-(`10002:10001`, 1 CPU, 1 GB, no retries); `deploy/obu-course-planner-refresh.{service,timer}` run it
+(10002:10001, 1 CPU, 1 GB RAM, no swap, no retries); `deploy/obu-course-planner-refresh.{service,timer}` run it
 daily at 05:00 UTC, without touching the running API container.
 
 The output directory must be writable by UID 10002 and readable by the API's GID 10001. Configure
@@ -157,27 +166,24 @@ sudo systemctl enable --now obu-course-planner-refresh.timer
 sudo systemctl start --no-block obu-course-planner-refresh.service
 ```
 
-Use a commit-tagged image or immutable image ID for `OBU_PLANNER_REFRESH_IMAGE`; rebuild and update
-that value when changing the capture code. The API image is deployed independently.
+Use an immutable image ID for `OBU_PLANNER_REFRESH_IMAGE`; rebuild and update that value when
+changing capture code. Also retain a versioned image tag: the worker is built independently of the
+API, and `coolify.managed=true` keeps Coolify's generic unused-image cleanup from deleting it.
+Pinning an ID alone does not retain an unused image. Verify `docker image inspect` before a cutover;
+keep the last available worker image and snapshot for rollback. The API needs no restart.
 
-For local refresher development, install the locked driver dependencies and matching Chromium
-(the Docker image uses its headless shell), then point the transport at it:
+For native development outside Docker, build the same pinned, patched source with Rust 1.98.0
+and its CMake/Clang prerequisites, then set `OBU_CFSOLVE_EXECUTABLE` to the built `obu_refresh`
+binary and `OBU_CFSOLVE_PROFILE` to its `profiles/safari-26-ios.json` file. Keep the accompanying
+answer maps beside the profile. Docker supplies these paths by default.
 
 ```sh
-npm ci --prefix browser
-node browser/node_modules/playwright-core/cli.js install chromium
-export NODE_PATH="$PWD/browser/node_modules"
-export OBU_BROWSER_EXECUTABLE="$(node -e "console.log(require('playwright-core').chromium.executablePath())")"
 uv run python -m obu_course_planner.refresh --output /tmp/schedule-snapshot.json --delay 1
 ```
 
-The default interval is one second. For an explicitly authorized faster capture, `--delay 0.1` permits
-at most ten requests per second; intervals below 0.1 seconds are rejected. This local override does
-not change the installed host runner's `--delay 1`.
-
-With those browser variables exported, `npm test --prefix browser` also runs the real-browser
-regression against a local HTTP fixture (no OBU requests), including native JavaScript navigation,
-cookies, POST submission, blocked presentation assets (including in child frames), and request pacing.
+The default interval is one second. For an explicitly authorized faster capture, `--delay 0.1`
+permits at most ten requests per second; intervals below 0.1 seconds are rejected. This local
+override does not change the installed host runner's `--delay 1`.
 
 ## License
 
